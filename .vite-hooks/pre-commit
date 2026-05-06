@@ -1,2 +1,2 @@
-vp staged
 node scripts/update-benchmarks.mjs
+vp staged
