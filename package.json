@@ -1,0 +1,21 @@
+{
+  "name": "media-pipeline-monorepo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.2.0",
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "lightningcss"]
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "bench": "pnpm --dir packages/media-pipeline bench",
+    "dev:tanstack-start": "pnpm --dir examples/tanstack-start dev",
+    "build:tanstack-start": "pnpm --dir examples/tanstack-start build",
+    "preview:tanstack-start": "pnpm --dir examples/tanstack-start preview",
+    "dev:vanilla-html": "pnpm --dir examples/vanilla-html dev",
+    "build:vanilla-html": "pnpm --dir examples/vanilla-html build",
+    "preview:vanilla-html": "pnpm --dir examples/vanilla-html preview"
+  }
+}
+

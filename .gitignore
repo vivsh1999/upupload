@@ -1,0 +1,23 @@
+node_modules
+.DS_Store
+dist
+dist-ssr
+*.local
+.env
+.cta.json
+.vscode
+package-lock.json
+examples/**/package-lock.json
+examples/**/pnpm-lock.yaml
+.nitro
+.tanstack
+.wrangler
+.output
+.vinxi
+__unconfig*
+todos.json
+uploads
+Raw images
+examples/**/uploads
+examples/**/dist
+examples/**/node_modules

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>media-pipeline — vanilla example</title>
+    <style>
+      :root {
+        font-family: system-ui, sans-serif;
+        line-height: 1.45;
+        max-width: 42rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      label {
+        display: block;
+        margin: 0.75rem 0 0.25rem;
+      }
+      button {
+        margin-top: 1rem;
+        padding: 0.5rem 1rem;
+        cursor: pointer;
+      }
+      #log {
+        margin-top: 1.5rem;
+        padding: 1rem;
+        background: #f4f4f5;
+        border-radius: 8px;
+        font-size: 0.875rem;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Vanilla HTML / JS</h1>
+    <p>
+      Uses <code>media-pipeline/browser</code> (no React). For resumable uploads, run
+      <code>pnpm dev:tanstack-start</code> on port 3000 — this dev server proxies
+      <code>/api/tus</code> there.
+    </p>
+
+    <label for="file">Choose image or video</label>
+    <input id="file" type="file" accept="image/*,video/*" />
+
+    <label for="tus">TUS endpoint (optional override)</label>
+    <input
+      id="tus"
+      type="url"
+      size="60"
+      placeholder="defaults to same-origin /api/tus/"
+    />
+
+    <div>
+      <button type="button" id="process">Run pipeline only</button>
+      <button type="button" id="upload">Run pipeline + TUS upload</button>
+    </div>
+
+    <section id="log" aria-live="polite"></section>
+
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>

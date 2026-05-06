@@ -1,0 +1,19 @@
+{
+  "name": "vanilla-html-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev --port 4174",
+    "build": "vite build",
+    "preview": "vite preview --port 4174",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "media-pipeline": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2",
+    "vite": "^8.0.0",
+    "vitest": "^4.1.5"
+  }
+}
