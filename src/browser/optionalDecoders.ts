@@ -12,13 +12,13 @@ async function optionalImport<TModule = unknown>(moduleName: string): Promise<TM
   }
 }
 
-export function isHeicLike(file: { name: string; type?: string | null }) {
+export function isHeicLike(file: { name: string; type?: string | null }): boolean {
   const ext = fileExtensionLower(file.name);
   const mime = (file.type ?? "").toLowerCase();
   return ext === ".heic" || ext === ".heif" || mime === "image/heic" || mime === "image/heif";
 }
 
-export function isTiffLike(file: { name: string; type?: string | null }) {
+export function isTiffLike(file: { name: string; type?: string | null }): boolean {
   const ext = fileExtensionLower(file.name);
   const mime = (file.type ?? "").toLowerCase();
   return ext === ".tif" || ext === ".tiff" || mime === "image/tiff";

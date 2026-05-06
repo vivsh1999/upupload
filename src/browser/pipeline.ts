@@ -103,11 +103,11 @@ function stem(name: string) {
   return i >= 0 ? name.slice(0, i) : name;
 }
 
-export function toJpegName(originalName: string) {
+export function toJpegName(originalName: string): string {
   return `${stem(originalName)}.jpg`;
 }
 
-export function toThumbName(originalName: string) {
+export function toThumbName(originalName: string): string {
   return `${stem(originalName)}.thumb.jpg`;
 }
 

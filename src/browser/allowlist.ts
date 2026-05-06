@@ -1,5 +1,5 @@
 /** Camera / cinema RAW extensions (often `application/octet-stream`). */
-export const RAW_EXTENSIONS = new Set([
+export const RAW_EXTENSIONS: Set<string> = new Set([
   ".r3d",
   ".braw",
   ".ari",
@@ -62,13 +62,13 @@ const RASTER_IMAGE_EXTENSIONS = new Set([
 
 const VECTOR_IMAGE_EXTENSIONS = new Set([".svg"]);
 
-export function fileExtensionLower(name: string) {
+export function fileExtensionLower(name: string): string {
   const i = name.lastIndexOf(".");
   return i >= 0 ? name.slice(i).toLowerCase() : "";
 }
 
 /** Whether this file may be uploaded at all (folder drops may include junk). */
-export function isSupportedMediaUpload(file: { name: string; type?: string | null }) {
+export function isSupportedMediaUpload(file: { name: string; type?: string | null }): boolean {
   const ext = fileExtensionLower(file.name);
   const mime = (file.type ?? "").toLowerCase();
 
@@ -100,19 +100,19 @@ export function isSupportedMediaUpload(file: { name: string; type?: string | nul
 }
 
 /** Upload as original bytes (no JPEG transcode). */
-export function isVideoLike(file: { name: string; type?: string | null }) {
+export function isVideoLike(file: { name: string; type?: string | null }): boolean {
   const ext = fileExtensionLower(file.name);
   const mime = (file.type ?? "").toLowerCase();
   return mime.startsWith("video/") || VIDEO_EXTENSIONS.has(ext);
 }
 
-export function isAudioLike(file: { name: string; type?: string | null }) {
+export function isAudioLike(file: { name: string; type?: string | null }): boolean {
   const ext = fileExtensionLower(file.name);
   const mime = (file.type ?? "").toLowerCase();
   return mime.startsWith("audio/") || AUDIO_EXTENSIONS.has(ext);
 }
 
-export function shouldUploadWithoutTranscode(file: { name: string; type?: string | null }) {
+export function shouldUploadWithoutTranscode(file: { name: string; type?: string | null }): boolean {
   const ext = fileExtensionLower(file.name);
   const mime = (file.type ?? "").toLowerCase();
 
@@ -123,7 +123,7 @@ export function shouldUploadWithoutTranscode(file: { name: string; type?: string
 }
 
 /** Raster / RAW images that should become JPEG before upload. */
-export function shouldCompressToJpeg(file: { name: string; type?: string | null }) {
+export function shouldCompressToJpeg(file: { name: string; type?: string | null }): boolean {
   if (shouldUploadWithoutTranscode(file)) return false;
 
   const ext = fileExtensionLower(file.name);
@@ -137,6 +137,6 @@ export function shouldCompressToJpeg(file: { name: string; type?: string | null 
   return false;
 }
 
-export function isCameraRawImage(file: { name: string; type?: string | null }) {
+export function isCameraRawImage(file: { name: string; type?: string | null }): boolean {
   return RAW_EXTENSIONS.has(fileExtensionLower(file.name));
 }
