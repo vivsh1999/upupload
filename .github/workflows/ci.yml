@@ -40,31 +40,35 @@ jobs:
       - name: Run tests
         run: vp test
 
-      - name: Sync Version
+      - name: Sync Version and Commit
         if: github.event_name == 'release'
-        id: set_version
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           echo "Setting version to $VERSION"
 
-          node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('package.json')); pkg.version = '$VERSION'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
-          node -e "const fs = require('fs'); const jsr = JSON.parse(fs.readFileSync('jsr.json')); jsr.version = '$VERSION'; fs.writeFileSync('jsr.json', JSON.stringify(jsr, null, 2) + '\n');"
-
-          vp check --fix package.json jsr.json || true
-
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Commit Version Bump
-        if: github.event_name == 'release'
-        run: |
-          VERSION=${GITHUB_REF_NAME#v}
+          # Setup Git
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json jsr.json
-          git commit --no-verify -m "chore: release v$VERSION [skip ci]" || true
-          git push origin main
-          git tag -f $GITHUB_REF_NAME
-          git push origin $GITHUB_REF_NAME -f
+
+          # Update package.json
+          node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('package.json')); pkg.version = '$VERSION'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
+
+          # Update jsr.json
+          node -e "const fs = require('fs'); const jsr = JSON.parse(fs.readFileSync('jsr.json')); jsr.version = '$VERSION'; fs.writeFileSync('jsr.json', JSON.stringify(jsr, null, 2) + '\n');"
+
+          # Format json files with vp to ensure they pass CI
+          vp check --fix package.json jsr.json || true
+
+          # Commit and Push if there are changes
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git add package.json jsr.json
+            git commit --no-verify -m "chore: release v$VERSION [skip ci]"
+            git push origin main
+            
+            # Re-point the release tag to this new commit
+            git tag -f $GITHUB_REF_NAME
+            git push origin $GITHUB_REF_NAME -f
+          fi
 
   publish-npm:
     needs: prepare
@@ -93,12 +97,6 @@ jobs:
 
       - name: Install dependencies
         run: vp install
-
-      - name: Sync version
-        if: github.event_name == 'release'
-        run: |
-          node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('package.json')); pkg.version = '${{ needs.prepare.outputs.version }}'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
-
       - name: Build project
         run: vp pack
 
@@ -131,12 +129,6 @@ jobs:
 
       - name: Install dependencies
         run: vp install
-
-      - name: Sync version
-        if: github.event_name == 'release'
-        run: |
-          node -e "const fs = require('fs'); const jsr = JSON.parse(fs.readFileSync('jsr.json')); jsr.version = '${{ needs.prepare.outputs.version }}'; fs.writeFileSync('jsr.json', JSON.stringify(jsr, null, 2) + '\n');"
-          git add . && git commit --no-verify -m "sync jsr.json version [skip ci]" || true
 
       - name: Build project
         run: vp pack
