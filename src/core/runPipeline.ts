@@ -11,6 +11,14 @@ function defaultLogger(): PipelineLogger {
   return () => {};
 }
 
+/**
+ * Execute a pipeline definition against a source, returning merged results.
+ *
+ * @param source - The input file/blob to process.
+ * @param def - Pipeline definition containing ordered stages.
+ * @param options - Optional logger.
+ * @returns Merged result from all executed stages.
+ */
 export async function runPipeline(
   source: PipelineSource,
   def: PipelineDefinition<PipelineSource, PipelineResult>,

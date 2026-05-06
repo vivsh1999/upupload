@@ -62,6 +62,7 @@ const RASTER_IMAGE_EXTENSIONS = new Set([
 
 const VECTOR_IMAGE_EXTENSIONS = new Set([".svg"]);
 
+/** Extract the lowercase file extension from a filename. */
 export function fileExtensionLower(name: string): string {
   const i = name.lastIndexOf(".");
   return i >= 0 ? name.slice(i).toLowerCase() : "";
@@ -106,12 +107,14 @@ export function isVideoLike(file: { name: string; type?: string | null }): boole
   return mime.startsWith("video/") || VIDEO_EXTENSIONS.has(ext);
 }
 
+/** Whether the file looks like audio (by extension or MIME). */
 export function isAudioLike(file: { name: string; type?: string | null }): boolean {
   const ext = fileExtensionLower(file.name);
   const mime = (file.type ?? "").toLowerCase();
   return mime.startsWith("audio/") || AUDIO_EXTENSIONS.has(ext);
 }
 
+/** Whether the file type should be uploaded as-is without JPEG transcoding. */
 export function shouldUploadWithoutTranscode(file: {
   name: string;
   type?: string | null;
@@ -140,6 +143,7 @@ export function shouldCompressToJpeg(file: { name: string; type?: string | null 
   return false;
 }
 
+/** Whether the file is a camera RAW image (by extension). */
 export function isCameraRawImage(file: { name: string; type?: string | null }): boolean {
   return RAW_EXTENSIONS.has(fileExtensionLower(file.name));
 }

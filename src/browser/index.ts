@@ -1,3 +1,4 @@
+/** @module browser */
 export * from "./allowlist";
 export * from "./rawDecode";
 export * from "./optionalDecoders";

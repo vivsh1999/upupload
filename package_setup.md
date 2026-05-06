@@ -254,7 +254,7 @@ JSR generates API documentation from JSDoc comments in source code.
 
 ### Symbol Documentation
 
-Add JSDoc above every exported symbol:
+**At least 80% of exported symbols must have JSDoc** for JSR to pass this score. Add JSDoc above every exported symbol:
 
 ````ts
 /**
@@ -272,10 +272,11 @@ export function search(query: string, limit = 20): string[];
 
 - `{@link search}` creates clickable cross-references to other symbols.
 - Annotate interface properties, class methods, and constructor params similarly.
+- Re-exports from other modules inherit their JSDoc, but types/interfaces/functions defined **directly** in entrypoint files must be individually documented.
 
 ### Module Documentation
 
-Add at the top of each exported module file:
+Add at the top of **every entrypoint file** (every file listed in `jsr.json` `exports`):
 
 ```ts
 /**
@@ -284,6 +285,7 @@ Add at the top of each exported module file:
  */
 ```
 
+- **Every entrypoint must have `@module`** — JSR scores this as a 0/1 pass/fail.
 - Module docs appear on the package's **Overview** tab, replacing the README by default. Change this in the package Settings tab (**Readme Source** → "Readme").
 - Custom wildcard import name: `/** @module myModule */` makes `import * as myModule from "..."` instead of `import * as mod from "..."`.
 

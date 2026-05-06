@@ -9,12 +9,14 @@ async function optionalImport<TModule = unknown>(moduleName: string): Promise<TM
   }
 }
 
+/** Whether the file is HEIC/HEIF (by extension or MIME). */
 export function isHeicLike(file: { name: string; type?: string | null }): boolean {
   const ext = fileExtensionLower(file.name);
   const mime = (file.type ?? "").toLowerCase();
   return ext === ".heic" || ext === ".heif" || mime === "image/heic" || mime === "image/heif";
 }
 
+/** Whether the file is TIFF (by extension or MIME). */
 export function isTiffLike(file: { name: string; type?: string | null }): boolean {
   const ext = fileExtensionLower(file.name);
   const mime = (file.type ?? "").toLowerCase();

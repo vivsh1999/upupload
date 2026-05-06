@@ -32,10 +32,12 @@ async function loadImageCompression(): Promise<ImageCompressionFn> {
   return imageCompressionModulePromise;
 }
 
+/** Warm up the lazy-loaded `browser-image-compression` module. */
 export function preloadImageCompression() {
   void loadImageCompression();
 }
 
+/** The three artifact variants produced by the default browser pipeline. */
 export type DefaultBrowserPipelineVariant = "original" | "optimized" | "thumbnail";
 
 export type DefaultBrowserPipelineOptions = {
@@ -63,6 +65,7 @@ export type DefaultBrowserPipelineOptions = {
   debug?: boolean;
 };
 
+/** Sensible defaults for the browser pipeline (save optimized + thumbnail, 90 % quality, 4K max). */
 export const DEFAULT_BROWSER_PIPELINE_OPTIONS: DefaultBrowserPipelineOptions = {
   saveOriginal: false,
   saveOptimized: true,
@@ -76,6 +79,7 @@ export const DEFAULT_BROWSER_PIPELINE_OPTIONS: DefaultBrowserPipelineOptions = {
   debug: false,
 };
 
+/** Pre-heat decoders and compressors for a set of files before processing. */
 export function preloadBrowserPipelineForFiles(
   files: Array<{ name: string; type?: string | null }>,
   opts: Pick<DefaultBrowserPipelineOptions, "saveOptimized" | "saveThumbnails">,
@@ -103,10 +107,12 @@ function stem(name: string) {
   return i >= 0 ? name.slice(0, i) : name;
 }
 
+/** Replace the extension of a filename with `.jpg`. */
 export function toJpegName(originalName: string): string {
   return `${stem(originalName)}.jpg`;
 }
 
+/** Replace the extension with `.thumb.jpg` for thumbnail outputs. */
 export function toThumbName(originalName: string): string {
   return `${stem(originalName)}.thumb.jpg`;
 }
@@ -165,6 +171,7 @@ function info(
   return { level, message, code };
 }
 
+/** Run the standard browser-side upload pipeline for a single source. */
 export async function runDefaultBrowserPipeline(
   input: PipelineSource,
   opts: DefaultBrowserPipelineOptions,

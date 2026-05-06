@@ -1,3 +1,4 @@
+/** @module react */
 import { useCallback, useRef, useState } from "react";
 import type { DragEvent, HTMLAttributes, ComponentProps } from "react";
 import type { DefaultBrowserPipelineOptions } from "../browser/pipeline";
@@ -22,65 +23,105 @@ export {
   isAudioLike,
 } from "../browser";
 
+/** Supported transport protocols for uploading artifacts. */
 export type MediaUploadTransportMode = "tus" | "xhr" | "custom";
 
+/** Options for TUS resumable upload transport. */
 export interface TusUploadOptions {
+  /** TUS server endpoint URL. */
   endpoint?: string;
+  /** Upload chunk size in bytes. */
   chunkSize?: number;
+  /** Delay (ms) between upload retries. */
   retryDelays?: number[];
 }
 
+/** Context passed to a custom upload handler. */
 export interface MediaUploadCustomUploadContext {
+  /** Original filename being uploaded. */
   fileName?: string;
 }
 
+/** User-defined function for handling artifact uploads when transport is "custom". */
 export type MediaUploadCustomUploadHandler = (
+  /** The artifact to upload. */
   artifact: PipelineArtifact,
+  /** Context with file metadata. */
   context: MediaUploadCustomUploadContext,
 ) => Promise<void>;
 
+/** Performance tuning options for the upload queue. */
 export interface MediaUploadTuningOptions {
+  /** Maximum number of simultaneous uploads. */
   simultaneousUploads?: number;
 }
 
+/** A single file in the upload queue with its current processing status. */
 export interface MediaUploadQueueItem {
+  /** Unique item identifier. */
   id: string;
+  /** Original filename. */
   name: string;
+  /** Current processing status. */
   status: "idle" | "processing" | "uploading" | "error";
+  /** Upload progress 0–100. */
   progress: number;
+  /** Error message when status is "error". */
   error?: string;
 }
 
+/** Configuration options for the `useMediaUpload` hook. */
 export interface UseMediaUploadOptions {
+  /** Override default pipeline options (quality, thumbnails, etc.). */
   initialConfig?: Partial<DefaultBrowserPipelineOptions>;
+  /** Upload transport mode. Defaults to "custom" (requires `uploadHandler`). */
   transport?: MediaUploadTransportMode;
+  /** TUS transport options (required when transport is "tus"). */
   tus?: TusUploadOptions;
+  /** Custom upload handler (required when transport is "custom"). */
   uploadHandler?: MediaUploadCustomUploadHandler;
+  /** Maximum number of files allowed in the queue. */
   maxNumberOfFiles?: number;
+  /** Performance tuning options. */
   tuning?: MediaUploadTuningOptions;
+  /** Called when an info message is emitted. */
   onInfo?: (message: string) => void;
+  /** Called when a warning is emitted. */
   onWarning?: (message: string) => void;
+  /** Called when an error occurs during processing or upload. */
   onError?: (error: Error, context?: MediaUploadCustomUploadContext) => void;
+  /** Called when a single file artifact finishes uploading. */
   onFileComplete?: (fileName: string) => void;
 }
 
+/** Return type of the `useMediaUpload` hook. */
 export interface UseMediaUploadResult {
+  /** Current pipeline configuration. */
   config: DefaultBrowserPipelineOptions;
+  /** Merge a partial config update. */
   updateConfig: (patch: Partial<DefaultBrowserPipelineOptions>) => void;
+  /** Current upload queue items. */
   queue: MediaUploadQueueItem[];
+  /** Begin processing and uploading all queued files. */
   startUpload: () => Promise<void>;
+  /** Clear all items from the queue. */
   clear: () => void;
+  /** Reset a failed item to idle for retry. */
   retry: (fileId: string) => void;
+  /** Whether the queue is actively processing. */
   isBusy: boolean;
+  /** Spread onto a `<div>` to enable drag-and-drop file selection. */
   getDropTargetProps: <T extends Omit<HTMLAttributes<HTMLDivElement>, "onDrop" | "onDragOver">>(
     props?: T,
   ) => T & {
     onDrop: (event: DragEvent<HTMLDivElement>) => void;
     onDragOver: (event: DragEvent<HTMLDivElement>) => void;
   };
+  /** Spread onto a file `<input>` to add files via the native picker. */
   getFileInputProps: <T extends Omit<ComponentProps<"input">, "type" | "multiple">>(
     props?: T,
   ) => T & { type: "file"; multiple: true; hidden?: boolean };
+  /** Spread onto a file `<input>` to add files via a folder picker. */
   getFolderInputProps: <T extends Omit<ComponentProps<"input">, "type" | "multiple">>(
     props?: T,
   ) => T & { type: "file"; multiple: true; webkitdirectory: string; hidden?: boolean };
@@ -92,6 +133,13 @@ function uid(): string {
   return `upupload-${counter}-${Date.now()}`;
 }
 
+/**
+ * React hook that provides a complete media upload workflow:
+ * file selection (drop / picker), pipeline processing, and upload.
+ *
+ * @param options - Configuration for pipeline, transport, and callbacks.
+ * @returns Controls and state for managing the upload queue.
+ */
 export function useMediaUpload(options?: UseMediaUploadOptions): UseMediaUploadResult {
   const {
     initialConfig,

@@ -1,7 +1,9 @@
+/** Convert a Blob to an ArrayBuffer. */
 export async function blobToArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
   return await blob.arrayBuffer();
 }
 
+/** Render raw RGBA pixel data to a JPEG File via canvas. */
 export async function jpegFileFromImageData(
   image: { data: Uint8ClampedArray; width: number; height: number },
   filename: string,

@@ -70,11 +70,14 @@ use: "jsr#writing-docs"
 
 # Documentation (JSR)
 
-JSR generates API documentation from JSDoc comments in source code.
+JSR generates API documentation from JSDoc comments in source code. Two mandatory checks must pass:
+
+1. **Module docs (0/1)** — every entrypoint listed in `jsr.json` `exports` needs `@module`
+2. **Symbol docs (0/1)** — at least 80 % of exported symbols need JSDoc
 
 ## Symbol Documentation
 
-Add JSDoc above exported symbols (`/** ... */`) with:
+Add JSDoc above all exported symbols (`/** ... */`) — especially types, interfaces, and functions defined directly in entrypoint files (re-exports inherit docs from their source):
 
 - `@param` — describe function parameters
 - `@returns` — describe return value
@@ -83,7 +86,7 @@ Add JSDoc above exported symbols (`/** ... */`) with:
 
 ## Module Documentation
 
-Add a JSDoc comment at the top of a module file with `@module`:
+Add a JSDoc comment at the top of **every entrypoint file** with `@module`:
 
 - `/** Overview of this module's purpose. @module */` — shown on package "Overview" tab (overrides README by default; toggle via Settings > Readme Source)
 - Custom wildcard import identifier: `/** @module <name> */` makes `import * as <name> from "..."` use the custom name instead of `mod`

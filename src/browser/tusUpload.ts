@@ -1,5 +1,6 @@
 import * as tus from "tus-js-client";
 
+/** Upload metadata attached to a TUS artifact. */
 export type TusArtifactUploadMeta = {
   variant: string;
   filename: string;
@@ -7,6 +8,7 @@ export type TusArtifactUploadMeta = {
   relativePath?: string;
 };
 
+/** Upload a single artifact blob via the TUS resumable protocol. */
 export function uploadArtifactWithTus(options: {
   endpoint: string;
   chunkSize: number;

@@ -1,4 +1,4 @@
-/**
+/** @module rawDecode
  * Decode camera RAW bytes in the browser via LibRaw (WASM + Web Worker).
  * Output is a high-quality `image/jpeg` `File` suitable for JPEG pipelines.
  */
@@ -29,6 +29,7 @@ function getLibRawCtor() {
   return libRawCtorPromise;
 }
 
+/** Warm up the lazy-loaded `libraw-wasm` decoder module. */
 export function preloadRawDecoder() {
   void getLibRawCtor();
 }
@@ -123,6 +124,7 @@ const defaultLibRawOpenSettings: Record<string, unknown> = {
   halfSize: false,
 };
 
+/** Decode a camera RAW file into a high-quality JPEG File via LibRaw WASM. */
 export async function decodeCameraRawToJpegFile(
   source: File,
   options: { outFilename: string; outputQuality?: number; debug?: boolean },
