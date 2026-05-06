@@ -1,6 +1,6 @@
 # Vanilla HTML + JavaScript example
 
-Plain `<script type="module">` using **`media-pipeline/browser`** (no React, no bundler in source — Vite is only the dev/build tool).
+Plain `<script type="module">` using **`@vivsh1999/upupload/browser`** (no React, no bundler in source — Vite is only the dev/build tool).
 
 ## Develop
 

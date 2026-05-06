@@ -1,79 +1,79 @@
 /** Camera / cinema RAW extensions (often `application/octet-stream`). */
 export const RAW_EXTENSIONS = new Set([
-  '.r3d',
-  '.braw',
-  '.ari',
-  '.dng',
-  '.cr2',
-  '.cr3',
-  '.nef',
-  '.arw',
-  '.raf',
-  '.rw2',
-  '.orf',
-  '.srw',
-  '.pef',
-  '.x3f',
-])
+  ".r3d",
+  ".braw",
+  ".ari",
+  ".dng",
+  ".cr2",
+  ".cr3",
+  ".nef",
+  ".arw",
+  ".raf",
+  ".rw2",
+  ".orf",
+  ".srw",
+  ".pef",
+  ".x3f",
+]);
 
 const VIDEO_EXTENSIONS = new Set([
-  '.mp4',
-  '.m4v',
-  '.mkv',
-  '.mov',
-  '.webm',
-  '.avi',
-  '.wmv',
-  '.mpg',
-  '.mpeg',
-  '.ogv',
-  '.ts',
-  '.m2ts',
-  '.3gp',
-  '.mxf',
-])
+  ".mp4",
+  ".m4v",
+  ".mkv",
+  ".mov",
+  ".webm",
+  ".avi",
+  ".wmv",
+  ".mpg",
+  ".mpeg",
+  ".ogv",
+  ".ts",
+  ".m2ts",
+  ".3gp",
+  ".mxf",
+]);
 
 const AUDIO_EXTENSIONS = new Set([
-  '.mp3',
-  '.wav',
-  '.flac',
-  '.aac',
-  '.m4a',
-  '.ogg',
-  '.opus',
-  '.wma',
-  '.aiff',
-  '.aif',
-])
+  ".mp3",
+  ".wav",
+  ".flac",
+  ".aac",
+  ".m4a",
+  ".ogg",
+  ".opus",
+  ".wma",
+  ".aiff",
+  ".aif",
+]);
 
 const RASTER_IMAGE_EXTENSIONS = new Set([
-  '.jpg',
-  '.jpeg',
-  '.png',
-  '.gif',
-  '.webp',
-  '.bmp',
-  '.tif',
-  '.tiff',
-  '.heic',
-  '.heif',
-])
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".gif",
+  ".webp",
+  ".bmp",
+  ".tif",
+  ".tiff",
+  ".heic",
+  ".heif",
+]);
 
-const VECTOR_IMAGE_EXTENSIONS = new Set(['.svg'])
+const VECTOR_IMAGE_EXTENSIONS = new Set([".svg"]);
 
 export function fileExtensionLower(name: string) {
-  const i = name.lastIndexOf('.')
-  return i >= 0 ? name.slice(i).toLowerCase() : ''
+  const i = name.lastIndexOf(".");
+  return i >= 0 ? name.slice(i).toLowerCase() : "";
 }
 
 /** Whether this file may be uploaded at all (folder drops may include junk). */
 export function isSupportedMediaUpload(file: { name: string; type?: string | null }) {
-  const ext = fileExtensionLower(file.name)
-  const mime = (file.type ?? '').toLowerCase()
+  const ext = fileExtensionLower(file.name);
+  const mime = (file.type ?? "").toLowerCase();
 
-  if (mime.startsWith('video/')) return true
-  if (mime.startsWith('audio/')) return true
-  if (mime.startsWith('image/')) return true
+  if (mime.startsWith("video/")) return true;
+  if (mime.startsWith("audio/")) return true;
+  if (mime.startsWith("image/")) return true;
 
   if (
     VIDEO_EXTENSIONS.has(ext) ||
@@ -82,61 +82,58 @@ export function isSupportedMediaUpload(file: { name: string; type?: string | nul
     VECTOR_IMAGE_EXTENSIONS.has(ext) ||
     RAW_EXTENSIONS.has(ext)
   ) {
-    return true
+    return true;
   }
 
-  if (mime === 'application/octet-stream') {
+  if (mime === "application/octet-stream") {
     return (
       VIDEO_EXTENSIONS.has(ext) ||
       AUDIO_EXTENSIONS.has(ext) ||
       RASTER_IMAGE_EXTENSIONS.has(ext) ||
       VECTOR_IMAGE_EXTENSIONS.has(ext) ||
       RAW_EXTENSIONS.has(ext)
-    )
+    );
   }
 
-  return false
+  return false;
 }
 
 /** Upload as original bytes (no JPEG transcode). */
 export function isVideoLike(file: { name: string; type?: string | null }) {
-  const ext = fileExtensionLower(file.name)
-  const mime = (file.type ?? '').toLowerCase()
-  return mime.startsWith('video/') || VIDEO_EXTENSIONS.has(ext)
+  const ext = fileExtensionLower(file.name);
+  const mime = (file.type ?? "").toLowerCase();
+  return mime.startsWith("video/") || VIDEO_EXTENSIONS.has(ext);
 }
 
 export function isAudioLike(file: { name: string; type?: string | null }) {
-  const ext = fileExtensionLower(file.name)
-  const mime = (file.type ?? '').toLowerCase()
-  return mime.startsWith('audio/') || AUDIO_EXTENSIONS.has(ext)
+  const ext = fileExtensionLower(file.name);
+  const mime = (file.type ?? "").toLowerCase();
+  return mime.startsWith("audio/") || AUDIO_EXTENSIONS.has(ext);
 }
 
-export function shouldUploadWithoutTranscode(file: {
-  name: string
-  type?: string | null
-}) {
-  const ext = fileExtensionLower(file.name)
-  const mime = (file.type ?? '').toLowerCase()
+export function shouldUploadWithoutTranscode(file: { name: string; type?: string | null }) {
+  const ext = fileExtensionLower(file.name);
+  const mime = (file.type ?? "").toLowerCase();
 
-  if (mime.startsWith('video/') || mime.startsWith('audio/')) return true
-  if (VIDEO_EXTENSIONS.has(ext) || AUDIO_EXTENSIONS.has(ext)) return true
-  if (mime === 'image/svg+xml' || VECTOR_IMAGE_EXTENSIONS.has(ext)) return true
-  return false
+  if (mime.startsWith("video/") || mime.startsWith("audio/")) return true;
+  if (VIDEO_EXTENSIONS.has(ext) || AUDIO_EXTENSIONS.has(ext)) return true;
+  if (mime === "image/svg+xml" || VECTOR_IMAGE_EXTENSIONS.has(ext)) return true;
+  return false;
 }
 
 /** Raster / RAW images that should become JPEG before upload. */
 export function shouldCompressToJpeg(file: { name: string; type?: string | null }) {
-  if (shouldUploadWithoutTranscode(file)) return false
+  if (shouldUploadWithoutTranscode(file)) return false;
 
-  const ext = fileExtensionLower(file.name)
-  const mime = (file.type ?? '').toLowerCase()
+  const ext = fileExtensionLower(file.name);
+  const mime = (file.type ?? "").toLowerCase();
 
-  if (mime === 'image/svg+xml' || VECTOR_IMAGE_EXTENSIONS.has(ext)) return false
-  if (mime.startsWith('image/')) return true
-  if (RAW_EXTENSIONS.has(ext)) return true
-  if (RASTER_IMAGE_EXTENSIONS.has(ext)) return true
+  if (mime === "image/svg+xml" || VECTOR_IMAGE_EXTENSIONS.has(ext)) return false;
+  if (mime.startsWith("image/")) return true;
+  if (RAW_EXTENSIONS.has(ext)) return true;
+  if (RASTER_IMAGE_EXTENSIONS.has(ext)) return true;
 
-  return false
+  return false;
 }
 
 /**
@@ -145,5 +142,5 @@ export function shouldCompressToJpeg(file: { name: string; type?: string | null 
  * will fail. Use this to skip those attempts and fall back to uploading originals.
  */
 export function isCameraRawImage(file: { name: string; type?: string | null }) {
-  return RAW_EXTENSIONS.has(fileExtensionLower(file.name))
+  return RAW_EXTENSIONS.has(fileExtensionLower(file.name));
 }

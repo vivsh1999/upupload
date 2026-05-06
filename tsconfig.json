@@ -1,5 +1,4 @@
 {
-  "include": [],
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -7,7 +6,9 @@
     "verbatimModuleSyntax": true,
     "strict": true,
     "skipLibCheck": true,
-    "noEmit": true
-  }
+    "noEmit": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "ignoreDeprecations": "6.0"
+  },
+  "include": ["src"]
 }
-

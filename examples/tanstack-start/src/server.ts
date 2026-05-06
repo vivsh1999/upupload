@@ -1,170 +1,164 @@
-import { randomBytes } from 'node:crypto'
-import { mkdirSync } from 'node:fs'
-import { access, mkdir, rename, rm } from 'node:fs/promises'
-import path from 'node:path'
-import process from 'node:process'
-import { Server as TusServer } from '@tus/server'
-import { FileStore } from '@tus/file-store'
-import {
-  createStartHandler,
-  defaultStreamHandler,
-} from '@tanstack/react-start/server'
-import type { Register } from '@tanstack/react-router'
-import type { RequestHandler } from '@tanstack/react-start/server'
+import { randomBytes } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { access, mkdir, rename, rm } from "node:fs/promises";
+import path from "node:path";
+import process from "node:process";
+import { Server as TusServer } from "@tus/server";
+import { FileStore } from "@tus/file-store";
+import { createStartHandler, defaultStreamHandler } from "@tanstack/react-start/server";
+import type { Register } from "@tanstack/react-router";
+import type { RequestHandler } from "@tanstack/react-start/server";
 
-import { isSupportedMediaUpload } from './lib/media-allowlist'
-import {
-  TUS_VARIANT_TO_SUBDIR,
-  variantFromTusMetadata,
-} from './lib/tus-variant-path'
-import { TUS_API_PATH, extractTusUploadIdFromRequest } from './lib/tus-path'
+import { isSupportedMediaUpload } from "./lib/media-allowlist";
+import { TUS_VARIANT_TO_SUBDIR, variantFromTusMetadata } from "./lib/tus-variant-path";
+import { TUS_API_PATH, extractTusUploadIdFromRequest } from "./lib/tus-path";
 
-const uploadDir = path.resolve(process.cwd(), 'uploads')
-const tusTempDir = path.join(uploadDir, '.tus')
-mkdirSync(uploadDir, { recursive: true })
-mkdirSync(tusTempDir, { recursive: true })
+const uploadDir = path.resolve(process.cwd(), "uploads");
+const tusTempDir = path.join(uploadDir, ".tus");
+mkdirSync(uploadDir, { recursive: true });
+mkdirSync(tusTempDir, { recursive: true });
 for (const sub of Object.values(TUS_VARIANT_TO_SUBDIR)) {
-  mkdirSync(path.join(uploadDir, sub), { recursive: true })
+  mkdirSync(path.join(uploadDir, sub), { recursive: true });
 }
 
 function isAllowedMediaUpload(metadata?: Record<string, string | null>) {
-  const name = metadata?.filename ?? metadata?.name ?? ''
-  const type = metadata?.type ?? metadata?.filetype ?? null
-  return isSupportedMediaUpload({ name, type })
+  const name = metadata?.filename ?? metadata?.name ?? "";
+  const type = metadata?.type ?? metadata?.filetype ?? null;
+  return isSupportedMediaUpload({ name, type });
 }
 
 /** Safe file extension for on-disk names (from client `filename` / MIME). */
 function uploadFileExtension(metadata?: Record<string, string | null>): string {
-  const filename = metadata?.filename ?? metadata?.name ?? ''
-  const base = path.basename(filename)
-  let ext = path.extname(base).toLowerCase()
+  const filename = metadata?.filename ?? metadata?.name ?? "";
+  const base = path.basename(filename);
+  let ext = path.extname(base).toLowerCase();
   if (ext && /^\.[a-z0-9._-]+$/.test(ext) && ext.length <= 16) {
-    return ext
+    return ext;
   }
-  const ft = (metadata?.filetype ?? metadata?.type ?? '').toLowerCase()
+  const ft = (metadata?.filetype ?? metadata?.type ?? "").toLowerCase();
   const mimeMap: Record<string, string> = {
-    'image/jpeg': '.jpg',
-    'image/jpg': '.jpg',
-    'image/png': '.png',
-    'image/webp': '.webp',
-    'image/gif': '.gif',
-    'image/svg+xml': '.svg',
-    'image/bmp': '.bmp',
-    'image/tiff': '.tif',
-    'video/mp4': '.mp4',
-    'video/webm': '.webm',
-    'video/quicktime': '.mov',
-    'audio/mpeg': '.mp3',
-    'audio/wav': '.wav',
-    'audio/wave': '.wav',
-    'audio/x-wav': '.wav',
-    'audio/flac': '.flac',
-    'audio/ogg': '.ogg',
-  }
-  ext = mimeMap[ft] ?? ''
-  if (ext) return ext
-  return '.bin'
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+    "image/svg+xml": ".svg",
+    "image/bmp": ".bmp",
+    "image/tiff": ".tif",
+    "video/mp4": ".mp4",
+    "video/webm": ".webm",
+    "video/quicktime": ".mov",
+    "audio/mpeg": ".mp3",
+    "audio/wav": ".wav",
+    "audio/wave": ".wav",
+    "audio/x-wav": ".wav",
+    "audio/flac": ".flac",
+    "audio/ogg": ".ogg",
+  };
+  ext = mimeMap[ft] ?? "";
+  if (ext) return ext;
+  return ".bin";
 }
 
 function sanitizePathSegment(input: string) {
-  let out = ''
+  let out = "";
   for (const ch of input) {
-    const code = ch.charCodeAt(0)
+    const code = ch.charCodeAt(0);
     if (code < 32) {
-      out += '_'
-      continue
+      out += "_";
+      continue;
     }
     if ('\\/:*?"<>|'.includes(ch)) {
-      out += '_'
-      continue
+      out += "_";
+      continue;
     }
-    out += ch
+    out += ch;
   }
-  const normalized = out.trim().replace(/\s+/g, ' ')
-  return normalized.length > 0 ? normalized : 'file'
+  const normalized = out.trim().replace(/\s+/g, " ");
+  return normalized.length > 0 ? normalized : "file";
 }
 
 function sanitizeRelativeDirFromMetadata(metadata?: Record<string, string | null>) {
-  const relativePath = metadata?.relativePath
-  if (!relativePath) return ''
+  const relativePath = metadata?.relativePath;
+  if (!relativePath) return "";
 
-  const dirname = path.posix.dirname(relativePath.replace(/\\/g, '/'))
-  if (!dirname || dirname === '.') return ''
+  const dirname = path.posix.dirname(relativePath.replace(/\\/g, "/"));
+  if (!dirname || dirname === ".") return "";
 
   const safeSegments = dirname
-    .split('/')
-    .filter((segment) => segment && segment !== '.' && segment !== '..')
+    .split("/")
+    .filter((segment) => segment && segment !== "." && segment !== "..")
     .map((segment) => sanitizePathSegment(segment))
-    .slice(0, 12)
+    .slice(0, 12);
 
-  return safeSegments.join(path.sep)
+  return safeSegments.join(path.sep);
 }
 
 function safeOutputFilename(metadata?: Record<string, string | null>) {
-  const raw = metadata?.filename ?? metadata?.name ?? ''
-  const base = path.basename(raw)
-  const ext = uploadFileExtension(metadata)
-  const stem = sanitizePathSegment(path.basename(base, path.extname(base)))
-  return `${stem}${ext}`
+  const raw = metadata?.filename ?? metadata?.name ?? "";
+  const base = path.basename(raw);
+  const ext = uploadFileExtension(metadata);
+  const stem = sanitizePathSegment(path.basename(base, path.extname(base)));
+  return `${stem}${ext}`;
 }
 
 function splitNameAndExt(filename: string) {
-  const ext = path.extname(filename)
-  const base = ext ? filename.slice(0, -ext.length) : filename
-  return { base: base || 'file', ext }
+  const ext = path.extname(filename);
+  const base = ext ? filename.slice(0, -ext.length) : filename;
+  return { base: base || "file", ext };
 }
 
 async function uniqueDestinationPath(targetDir: string, filename: string) {
-  const { base, ext } = splitNameAndExt(filename)
-  await mkdir(targetDir, { recursive: true })
+  const { base, ext } = splitNameAndExt(filename);
+  await mkdir(targetDir, { recursive: true });
 
-  let attempt = 0
+  let attempt = 0;
   while (attempt < 10_000) {
-    const suffix = attempt === 0 ? '' : `-${attempt}`
-    const candidate = path.join(targetDir, `${base}${suffix}${ext}`)
+    const suffix = attempt === 0 ? "" : `-${attempt}`;
+    const candidate = path.join(targetDir, `${base}${suffix}${ext}`);
     try {
-      await access(candidate)
-      attempt += 1
-      continue
+      await access(candidate);
+      attempt += 1;
+      continue;
     } catch {
-      return candidate
+      return candidate;
     }
   }
-  throw new Error('Could not allocate unique destination path')
+  throw new Error("Could not allocate unique destination path");
 }
 
 async function moveCompletedUploadToFinalPath(upload: {
-  id: string
-  storage?: { type?: string; path?: string }
-  metadata?: Record<string, string | null>
+  id: string;
+  storage?: { type?: string; path?: string };
+  metadata?: Record<string, string | null>;
 }) {
-  const variant = variantFromTusMetadata(upload.metadata)
+  const variant = variantFromTusMetadata(upload.metadata);
   if (!variant) {
     throw {
       status_code: 400,
-      body: 'Invalid or missing variant in upload metadata.\n',
-    }
+      body: "Invalid or missing variant in upload metadata.\n",
+    };
   }
 
-  const sourcePath = upload.storage?.path
+  const sourcePath = upload.storage?.path;
   if (!sourcePath) {
     throw {
       status_code: 500,
-      body: 'Upload storage path missing for completed file.\n',
-    }
+      body: "Upload storage path missing for completed file.\n",
+    };
   }
 
-  const relDir = sanitizeRelativeDirFromMetadata(upload.metadata)
-  const targetRoot = path.join(uploadDir, TUS_VARIANT_TO_SUBDIR[variant], relDir)
-  await mkdir(targetRoot, { recursive: true })
+  const relDir = sanitizeRelativeDirFromMetadata(upload.metadata);
+  const targetRoot = path.join(uploadDir, TUS_VARIANT_TO_SUBDIR[variant], relDir);
+  await mkdir(targetRoot, { recursive: true });
 
-  const preferred = safeOutputFilename(upload.metadata)
-  const targetPath = await uniqueDestinationPath(targetRoot, preferred)
+  const preferred = safeOutputFilename(upload.metadata);
+  const targetPath = await uniqueDestinationPath(targetRoot, preferred);
 
-  await rename(sourcePath, targetPath)
+  await rename(sourcePath, targetPath);
 
-  const metaPath = path.join(tusTempDir, `${upload.id}.json`)
-  await rm(metaPath, { force: true })
+  const metaPath = path.join(tusTempDir, `${upload.id}.json`);
+  await rm(metaPath, { force: true });
 }
 
 const tusServer = new TusServer({
@@ -179,39 +173,36 @@ const tusServer = new TusServer({
    * Store each finished blob under `uploads/originals|optimized|thumbnails/`
    * based on client pipeline metadata `variant` (see `src/lib/tus-variant-path.ts`).
    */
-  namingFunction: () => randomBytes(18).toString('hex'),
+  namingFunction: () => randomBytes(18).toString("hex"),
   onUploadCreate: async (_req, upload) => {
     if (!variantFromTusMetadata(upload.metadata)) {
       throw {
         status_code: 400,
-        body: 'Invalid or missing variant in upload metadata.\n',
-      }
+        body: "Invalid or missing variant in upload metadata.\n",
+      };
     }
     if (!isAllowedMediaUpload(upload.metadata)) {
       throw {
         status_code: 415,
-        body: 'Only media uploads are allowed (video/audio/image + supported RAW formats).\n',
-      }
+        body: "Only media uploads are allowed (video/audio/image + supported RAW formats).\n",
+      };
     }
-    return {}
+    return {};
   },
   onUploadFinish: async (_req, upload) => {
-    await moveCompletedUploadToFinalPath(upload)
-    return {}
+    await moveCompletedUploadToFinalPath(upload);
+    return {};
   },
-})
+});
 
-const startHandler = createStartHandler(defaultStreamHandler)
+const startHandler = createStartHandler(defaultStreamHandler);
 
 const fetch: RequestHandler<Register> = async (request, opts) => {
-  const url = new URL(request.url)
-  if (
-    url.pathname === TUS_API_PATH ||
-    url.pathname.startsWith(`${TUS_API_PATH}/`)
-  ) {
-    return tusServer.handleWeb(request)
+  const url = new URL(request.url);
+  if (url.pathname === TUS_API_PATH || url.pathname.startsWith(`${TUS_API_PATH}/`)) {
+    return tusServer.handleWeb(request);
   }
-  return startHandler(request, opts)
-}
+  return startHandler(request, opts);
+};
 
-export default { fetch }
+export default { fetch };

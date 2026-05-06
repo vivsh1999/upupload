@@ -1,1 +1,1 @@
-export { useMediaUpload } from 'media-pipeline/react'
+export { useMediaUpload } from "@vivsh1999/upupload/react";

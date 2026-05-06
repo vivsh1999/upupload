@@ -1,9 +1,9 @@
-import { useRef } from 'react'
-import { toast } from 'sonner'
+import { useRef } from "react";
+import { toast } from "sonner";
 
-import { MediaUploadSkeleton } from './MediaUploadSkeleton'
-import type { MediaUploadFieldProps } from './types'
-import { useMediaUpload } from './useMediaUpload'
+import { MediaUploadSkeleton } from "./MediaUploadSkeleton";
+import type { MediaUploadFieldProps } from "./types";
+import { useMediaUpload } from "./useMediaUpload";
 
 export function MediaUploadField(props: MediaUploadFieldProps) {
   const {
@@ -29,10 +29,10 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
     fileInputProps,
     folderInputProps,
     dropTargetProps,
-  } = props
+  } = props;
 
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const folderInputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   const media = useMediaUpload({
     initialConfig,
@@ -42,27 +42,27 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
     maxNumberOfFiles,
     tuning,
     onInfo: (message) => {
-      onInfo?.(message)
-      toast.message(message)
+      onInfo?.(message);
+      toast.message(message);
     },
     onWarning: (message) => {
-      onWarning?.(message)
-      toast.warning(message)
+      onWarning?.(message);
+      toast.warning(message);
     },
     onError: (error, context) => {
-      onError?.(error, context)
-      const title = context?.fileName ? `Upload failed: ${context.fileName}` : 'Uploader error'
-      toast.error(title, { description: error.message })
+      onError?.(error, context);
+      const title = context?.fileName ? `Upload failed: ${context.fileName}` : "Uploader error";
+      toast.error(title, { description: error.message });
     },
     onFileComplete: (fileName) => {
-      onFileComplete?.(fileName)
-      toast.success(`Uploaded: ${fileName}`)
+      onFileComplete?.(fileName);
+      toast.success(`Uploaded: ${fileName}`);
     },
-  })
+  });
 
-  const fileListNode = renderFileList?.(media.queue)
-  const isDisabled = Boolean(disabled || media.isBusy)
-  const dropProps = media.getDropTargetProps(dropTargetProps)
+  const fileListNode = renderFileList?.(media.queue);
+  const isDisabled = Boolean(disabled || media.isBusy);
+  const dropProps = media.getDropTargetProps(dropTargetProps);
 
   return (
     <div data-slot="media-upload-field" className={className}>
@@ -85,7 +85,7 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
         onDrop={(event) => dropProps.onDrop?.(event)}
         onDragOver={(event) => dropProps.onDragOver?.(event)}
         onStartUpload={() => {
-          void media.startUpload()
+          void media.startUpload();
         }}
         onClear={media.clear}
         uploadQueue={renderFileList ? undefined : media.queue}
@@ -108,6 +108,5 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
         fileList={fileListNode ?? undefined}
       />
     </div>
-  )
+  );
 }
-

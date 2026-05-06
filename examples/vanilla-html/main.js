@@ -2,35 +2,35 @@ import {
   DEFAULT_BROWSER_PIPELINE_OPTIONS,
   runDefaultBrowserPipeline,
   uploadArtifactWithTus,
-} from 'media-pipeline/browser'
+} from "@vivsh1999/upupload/browser";
 
-const CHUNK = 5 * 1024 * 1024
+const CHUNK = 5 * 1024 * 1024;
 
-const logEl = document.getElementById('log')
-const fileInput = document.getElementById('file')
-const tusInput = document.getElementById('tus')
-const processBtn = document.getElementById('process')
-const uploadBtn = document.getElementById('upload')
+const logEl = document.getElementById("log");
+const fileInput = document.getElementById("file");
+const tusInput = document.getElementById("tus");
+const processBtn = document.getElementById("process");
+const uploadBtn = document.getElementById("upload");
 
 function log(line) {
-  logEl.textContent += `${line}\n`
+  logEl.textContent += `${line}\n`;
 }
 
 function clearLog() {
-  logEl.textContent = ''
+  logEl.textContent = "";
 }
 
 function tusEndpoint() {
-  const raw = tusInput.value.trim()
-  if (raw) return raw.endsWith('/') ? raw : `${raw}/`
-  return new URL('/api/tus/', window.location.origin).href
+  const raw = tusInput.value.trim();
+  if (raw) return raw.endsWith("/") ? raw : `${raw}/`;
+  return new URL("/api/tus/", window.location.origin).href;
 }
 
 async function runPipelineForSelectedFile() {
-  const file = fileInput.files?.[0]
+  const file = fileInput.files?.[0];
   if (!file) {
-    log('Pick a file first.')
-    return null
+    log("Pick a file first.");
+    return null;
   }
 
   const opts = {
@@ -39,57 +39,57 @@ async function runPipelineForSelectedFile() {
     saveOptimized: true,
     saveThumbnails: true,
     debug: true,
-  }
+  };
 
   const source = {
     file,
     name: file.name,
-    type: file.type || 'application/octet-stream',
-  }
+    type: file.type || "application/octet-stream",
+  };
 
-  log('Running pipeline…')
-  const result = await runDefaultBrowserPipeline(source, opts)
+  log("Running pipeline…");
+  const result = await runDefaultBrowserPipeline(source, opts);
 
   for (const m of result.info) {
-    log(`[${m.level}] ${m.message}`)
+    log(`[${m.level}] ${m.message}`);
   }
 
   if (result.removeFromQueue) {
-    log('removeFromQueue: true')
+    log("removeFromQueue: true");
   }
 
-  log(`Artifacts: ${result.artifacts.length}`)
+  log(`Artifacts: ${result.artifacts.length}`);
   for (const a of result.artifacts) {
-    log(`  - ${a.variant}: ${a.filename} (${a.filetype})`)
+    log(`  - ${a.variant}: ${a.filename} (${a.filetype})`);
   }
 
-  return result
+  return result;
 }
 
-processBtn.addEventListener('click', async () => {
-  clearLog()
+processBtn.addEventListener("click", async () => {
+  clearLog();
   try {
-    await runPipelineForSelectedFile()
-    log('Done (pipeline only).')
+    await runPipelineForSelectedFile();
+    log("Done (pipeline only).");
   } catch (e) {
-    log(String(e?.message ?? e))
+    log(String(e?.message ?? e));
   }
-})
+});
 
-uploadBtn.addEventListener('click', async () => {
-  clearLog()
+uploadBtn.addEventListener("click", async () => {
+  clearLog();
   try {
-    const result = await runPipelineForSelectedFile()
+    const result = await runPipelineForSelectedFile();
     if (!result?.artifacts.length) {
-      log('Nothing to upload.')
-      return
+      log("Nothing to upload.");
+      return;
     }
 
-    const endpoint = tusEndpoint()
-    log(`Uploading via TUS: ${endpoint}`)
+    const endpoint = tusEndpoint();
+    log(`Uploading via TUS: ${endpoint}`);
 
     for (const a of result.artifacts) {
-      log(`→ ${a.variant}: ${a.filename} …`)
+      log(`→ ${a.variant}: ${a.filename} …`);
       await uploadArtifactWithTus({
         endpoint,
         chunkSize: CHUNK,
@@ -100,11 +100,11 @@ uploadBtn.addEventListener('click', async () => {
           filetype: a.filetype,
           relativePath: a.relativePath,
         },
-      })
-      log(`  OK`)
+      });
+      log(`  OK`);
     }
-    log('All uploads finished.')
+    log("All uploads finished.");
   } catch (e) {
-    log(String(e?.message ?? e))
+    log(String(e?.message ?? e));
   }
-})
+});

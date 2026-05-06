@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 import {
   CircleCheckIcon,
@@ -6,12 +6,12 @@ import {
   Loader2Icon,
   OctagonXIcon,
   TriangleAlertIcon,
-} from "lucide-react"
-import { Toaster as Sonner, type ToasterProps } from "sonner"
+} from "lucide-react";
+import { Toaster as Sonner, type ToasterProps } from "sonner";
 
 function getTheme(): ToasterProps["theme"] {
-  if (typeof document === "undefined") return "system"
-  return document.documentElement.classList.contains("dark") ? "dark" : "light"
+  if (typeof document === "undefined") return "system";
+  return document.documentElement.classList.contains("dark") ? "dark" : "light";
 }
 
 function Toaster({ ...props }: ToasterProps) {
@@ -36,7 +36,7 @@ function Toaster({ ...props }: ToasterProps) {
       }
       {...props}
     />
-  )
+  );
 }
 
-export { Toaster }
+export { Toaster };

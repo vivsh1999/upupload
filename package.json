@@ -1,21 +1,82 @@
 {
-  "name": "media-pipeline-monorepo",
-  "private": true,
+  "name": "@vivsh1999/upupload",
+  "version": "0.0.0",
+  "description": "Client-first, multi-stage media uploader/processor with safe fallback-to-original behavior",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
   "type": "module",
-  "packageManager": "pnpm@10.2.0",
-  "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "lightningcss"]
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vivsh1999/upupload.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    },
+    "./browser": {
+      "types": "./dist/browser/index.d.mts",
+      "import": "./dist/browser/index.mjs",
+      "default": "./dist/browser/index.mjs"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.mts",
+      "import": "./dist/core/index.mjs",
+      "default": "./dist/core/index.mjs"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.mts",
+      "import": "./dist/react/index.mjs",
+      "default": "./dist/react/index.mjs"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.mts",
+      "import": "./dist/server/index.mjs",
+      "default": "./dist/server/index.mjs"
+    },
+    "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "pnpm -r build",
-    "test": "pnpm -r test",
-    "bench": "pnpm --dir packages/media-pipeline bench",
+    "build": "vp pack src/index.ts src/core/index.ts src/browser/index.ts src/react/index.ts src/server/index.ts",
+    "dev": "vp pack src/index.ts src/core/index.ts src/browser/index.ts src/react/index.ts src/server/index.ts --watch",
+    "test": "vp test",
+    "check": "vp check",
+    "prepublishOnly": "vp run build",
+    "bench": "vitest bench",
     "dev:tanstack-start": "pnpm --dir examples/tanstack-start dev",
     "build:tanstack-start": "pnpm --dir examples/tanstack-start build",
     "preview:tanstack-start": "pnpm --dir examples/tanstack-start preview",
     "dev:vanilla-html": "pnpm --dir examples/vanilla-html dev",
     "build:vanilla-html": "pnpm --dir examples/vanilla-html build",
     "preview:vanilla-html": "pnpm --dir examples/vanilla-html preview"
+  },
+  "dependencies": {
+    "browser-image-compression": "^2.0.2",
+    "libraw-wasm": "^1.1.2",
+    "tus-js-client": "^4.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "canvas": "^3.1.0",
+    "typescript": "^6.0.2",
+    "vite-plus": "^0.1.20",
+    "vitest": "^4.1.5"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "packageManager": "pnpm@10.2.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "lightningcss"
+    ]
   }
 }
-

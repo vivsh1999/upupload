@@ -9,7 +9,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "media-pipeline": "workspace:*"
+    "@vivsh1999/upupload": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^6.0.2",

@@ -1,60 +1,54 @@
-import type { MaxLongEdgePreset } from './types'
-import { DEFAULT_MAX_RESOLUTION_OPTIONS } from './types'
-import type {
-  MediaUploadQueueItem,
-  MediaUploadSkeletonProps,
-} from './types'
+import type { MaxLongEdgePreset } from "./types";
+import { DEFAULT_MAX_RESOLUTION_OPTIONS } from "./types";
+import type { MediaUploadQueueItem, MediaUploadSkeletonProps } from "./types";
 
 function cx(...parts: Array<string | undefined>) {
-  return parts.filter(Boolean).join(' ')
+  return parts.filter(Boolean).join(" ");
 }
 
-const defaultLabels: NonNullable<MediaUploadSkeletonProps['labels']> = {
-  saveOriginal: 'Save original',
-  saveOptimized: 'Save optimized (JPEG)',
-  saveThumbnails: 'Save thumbnails (JPEG)',
-  quality: 'JPEG quality',
-  maxResolution: 'Maximum resolution (long edge)',
-  chooseFiles: 'Choose files',
-  chooseFolder: 'Choose folder',
-  dropHint: 'Drop files or folders here',
-  startUpload: 'Start upload',
-  clear: 'Clear',
-  retry: 'Retry',
-  processing: 'Converting…',
-  uploading: 'Uploading…',
-}
+const defaultLabels: NonNullable<MediaUploadSkeletonProps["labels"]> = {
+  saveOriginal: "Save original",
+  saveOptimized: "Save optimized (JPEG)",
+  saveThumbnails: "Save thumbnails (JPEG)",
+  quality: "JPEG quality",
+  maxResolution: "Maximum resolution (long edge)",
+  chooseFiles: "Choose files",
+  chooseFolder: "Choose folder",
+  dropHint: "Drop files or folders here",
+  startUpload: "Start upload",
+  clear: "Clear",
+  retry: "Retry",
+  processing: "Converting…",
+  uploading: "Uploading…",
+};
 
-function statusLabel(item: MediaUploadQueueItem, lb: MediaUploadSkeletonProps['labels']) {
-  if (item.status === 'processing') return lb?.processing ?? defaultLabels.processing
-  if (item.status === 'uploading') return lb?.uploading ?? defaultLabels.uploading
-  return null
+function statusLabel(item: MediaUploadQueueItem, lb: MediaUploadSkeletonProps["labels"]) {
+  if (item.status === "processing") return lb?.processing ?? defaultLabels.processing;
+  if (item.status === "uploading") return lb?.uploading ?? defaultLabels.uploading;
+  return null;
 }
 
 function DefaultUploadQueue(props: {
-  items: MediaUploadQueueItem[]
-  classNames?: MediaUploadSkeletonProps['classNames']
-  labels?: MediaUploadSkeletonProps['labels']
-  onRetry?: (id: string) => void
+  items: MediaUploadQueueItem[];
+  classNames?: MediaUploadSkeletonProps["classNames"];
+  labels?: MediaUploadSkeletonProps["labels"];
+  onRetry?: (id: string) => void;
 }) {
-  const cn = props.classNames ?? {}
-  const lb = { ...defaultLabels, ...props.labels }
+  const cn = props.classNames ?? {};
+  const lb = { ...defaultLabels, ...props.labels };
   return (
     <ul data-slot="upload-queue" className={cx(cn.fileList)}>
       {props.items.map((item) => (
         <li
           key={item.id}
           data-slot="upload-queue-item"
-          className={cx('flex items-start gap-3', cn.fileListItem)}
+          className={cx("flex items-start gap-3", cn.fileListItem)}
         >
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex min-w-0 items-center gap-2">
               <span className="truncate font-medium">{item.name}</span>
-              {item.status === 'error' && item.error ? (
-                <span
-                  className="text-destructive truncate text-xs"
-                  title={item.error}
-                >
+              {item.status === "error" && item.error ? (
+                <span className="text-destructive truncate text-xs" title={item.error}>
                   {item.error}
                 </span>
               ) : null}
@@ -75,7 +69,7 @@ function DefaultUploadQueue(props: {
               />
             </div>
           </div>
-          {item.status === 'error' && props.onRetry ? (
+          {item.status === "error" && props.onRetry ? (
             <button
               type="button"
               className="text-primary shrink-0 text-xs underline"
@@ -87,26 +81,26 @@ function DefaultUploadQueue(props: {
         </li>
       ))}
     </ul>
-  )
+  );
 }
 
 export function MediaUploadSkeleton(props: MediaUploadSkeletonProps) {
-  const lb = { ...defaultLabels, ...props.labels }
-  const cn = props.classNames ?? {}
-  const resOpts = props.resolutionOptions ?? DEFAULT_MAX_RESOLUTION_OPTIONS
+  const lb = { ...defaultLabels, ...props.labels };
+  const cn = props.classNames ?? {};
+  const resOpts = props.resolutionOptions ?? DEFAULT_MAX_RESOLUTION_OPTIONS;
   const {
     className: dropExtraClass,
     onDrop: _userDrop,
     onDragOver: _userDragOver,
     ...dropSpread
-  } = props.dropTargetProps ?? {}
+  } = props.dropTargetProps ?? {};
 
   if (props.renderControls) {
     return (
       <div data-slot="root" className={cx(cn.root)}>
         {props.renderControls(props)}
       </div>
-    )
+    );
   }
 
   const toggleRow = props.renderToggleRow ? (
@@ -153,7 +147,7 @@ export function MediaUploadSkeleton(props: MediaUploadSkeletonProps) {
         />
       </label>
     </div>
-  )
+  );
 
   const qualityRow = (
     <div data-slot="quality-row" className={cx(cn.qualityRow)}>
@@ -171,7 +165,7 @@ export function MediaUploadSkeleton(props: MediaUploadSkeletonProps) {
         onChange={(e) => props.onQualityPercentChange(Number(e.target.value))}
       />
     </div>
-  )
+  );
 
   const resolutionRow = (
     <div data-slot="resolution-row" className={cx(cn.resolutionRow)}>
@@ -184,10 +178,10 @@ export function MediaUploadSkeleton(props: MediaUploadSkeletonProps) {
         disabled={props.disabled}
         value={String(props.maxLongEdge)}
         onChange={(e) => {
-          const v = e.target.value
+          const v = e.target.value;
           props.onMaxLongEdgeChange(
-            v === 'original' ? 'original' : (Number(v) as MaxLongEdgePreset),
-          )
+            v === "original" ? "original" : (Number(v) as MaxLongEdgePreset),
+          );
         }}
       >
         {resOpts.map((o) => (
@@ -197,7 +191,7 @@ export function MediaUploadSkeleton(props: MediaUploadSkeletonProps) {
         ))}
       </select>
     </div>
-  )
+  );
 
   const picker = props.renderPicker ? (
     props.renderPicker(props)
@@ -218,7 +212,7 @@ export function MediaUploadSkeleton(props: MediaUploadSkeletonProps) {
         className={cx(cn.folderInput)}
         type="file"
         multiple
-        {...{ webkitdirectory: '', directory: '' }}
+        {...{ webkitdirectory: "", directory: "" }}
         disabled={props.disabled}
         {...props.folderInputProps}
       />
@@ -254,7 +248,7 @@ export function MediaUploadSkeleton(props: MediaUploadSkeletonProps) {
         </div>
       </div>
     </>
-  )
+  );
 
   return (
     <div data-slot="root" className={cx(cn.root)}>
@@ -285,9 +279,7 @@ export function MediaUploadSkeleton(props: MediaUploadSkeletonProps) {
         </button>
       </div>
       {props.fileList}
-      {!props.fileList &&
-      props.uploadQueue &&
-      props.uploadQueue.length > 0 ? (
+      {!props.fileList && props.uploadQueue && props.uploadQueue.length > 0 ? (
         <DefaultUploadQueue
           items={props.uploadQueue}
           classNames={props.classNames}
@@ -296,5 +288,5 @@ export function MediaUploadSkeleton(props: MediaUploadSkeletonProps) {
         />
       ) : null}
     </div>
-  )
+  );
 }

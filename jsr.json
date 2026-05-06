@@ -1,0 +1,16 @@
+{
+  "name": "@vivsh1999/upupload",
+  "version": "0.0.0",
+  "description": "Client-first, multi-stage media uploader/processor with safe fallback-to-original behavior",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./browser": "./src/browser/index.ts",
+    "./core": "./src/core/index.ts",
+    "./react": "./src/react/index.ts",
+    "./server": "./src/server/index.ts"
+  },
+  "publish": {
+    "include": ["src", "README.md", "LICENSE", "package.json", "tsconfig.json"]
+  }
+}
