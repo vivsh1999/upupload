@@ -14,19 +14,16 @@ importers:
       libraw-wasm:
         specifier: ^1.1.2
         version: 1.1.2
-      react:
-        specifier: '>=18'
-        version: 19.2.5
       tus-js-client:
         specifier: ^4.3.1
         version: 4.3.1
     devDependencies:
-      '@types/react':
-        specifier: ^19.2.0
-        version: 19.2.14
       canvas:
         specifier: ^3.1.0
         version: 3.2.3
+      jsdom:
+        specifier: ^28.1.0
+        version: 28.1.0(canvas@3.2.3)
       typescript:
         specifier: ^6.0.2
         version: 6.0.3
@@ -66,6 +63,9 @@ importers:
       '@tus/server':
         specifier: ^2.4.0
         version: 2.4.0
+      '@vivsh1999/upupload':
+        specifier: workspace:*
+        version: link:../..
       browser-image-compression:
         specifier: ^2.0.2
         version: 2.0.2
@@ -87,9 +87,6 @@ importers:
       lucide-react:
         specifier: ^1.14.0
         version: 1.14.0(react@19.2.5)
-      media-pipeline:
-        specifier: workspace:*
-        version: link:../..
       radix-ui:
         specifier: ^1.4.3
         version: 1.4.3(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
@@ -154,7 +151,7 @@ importers:
 
   examples/vanilla-html:
     dependencies:
-      media-pipeline:
+      '@vivsh1999/upupload':
         specifier: workspace:*
         version: link:../..
     devDependencies:
