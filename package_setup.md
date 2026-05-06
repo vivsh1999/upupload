@@ -123,9 +123,9 @@ Required if publishing to JSR (JavaScript Registry). Use conditional exports mat
 }
 ```
 
-### `deno.json`
+### `deno.json` (optional)
 
-Required if publishing to JSR. Mirrors the exports from `jsr.json` with npm specifier imports.
+Only needed if you want your package to be consumed directly via Deno's import map. `jsr.json` is sufficient for publishing to JSR.
 
 ```json
 {
