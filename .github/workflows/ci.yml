@@ -1,0 +1,135 @@
+name: Publish Packages
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required for committing and pushing updates back to main
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main # Check out main branch instead of detached tag
+          fetch-depth: 0 # Required to force update the tag later
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          cache: true
+
+      - name: Install dependencies
+        run: vp install
+
+      - name: Check formatting and types
+        run: vp check
+
+      - name: Run tests
+        run: vp test
+
+      - name: Sync Version and Commit
+        if: github.event_name == 'release'
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "Setting version to $VERSION"
+
+          # Setup Git
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Update package.json
+          node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('package.json')); pkg.version = '$VERSION'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
+
+          # Update jsr.json
+          node -e "const fs = require('fs'); const jsr = JSON.parse(fs.readFileSync('jsr.json')); jsr.version = '$VERSION'; fs.writeFileSync('jsr.json', JSON.stringify(jsr, null, 2) + '\n');"
+
+          # Format json files with vp to ensure they pass CI
+          vp check --fix package.json jsr.json || true
+
+          # Commit and Push if there are changes
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git add package.json jsr.json
+            git commit --no-verify -m "chore: release v$VERSION [skip ci]"
+            git push origin main
+            
+            # Re-point the release tag to this new commit
+            git tag -f $GITHUB_REF_NAME
+            git push origin $GITHUB_REF_NAME -f
+          fi
+
+  publish-npm:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # Required for npm provenance
+    continue-on-error: true # Allow one publish to fail while the other succeeds
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main # Fetch the latest commit with the version bump
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          cache: true
+
+      - name: Install dependencies
+        run: vp install
+
+      - name: Build project
+        run: vp pack
+
+      - name: Publish to npm
+        run: npm publish --access public --provenance
+
+  publish-jsr:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # Required for jsr provenance
+    continue-on-error: true # Allow one publish to fail while the other succeeds
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main # Fetch the latest commit with the version bump
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          cache: true
+
+      - name: Install dependencies
+        run: vp install
+
+      - name: Build project
+        run: vp pack
+
+      - name: Publish to JSR
+        run: npx jsr publish

@@ -157,53 +157,94 @@ packages:
 Create `.github/workflows/ci.yml`:
 
 ```yaml
-name: CI
+name: Publish Packages
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  release:
+    types: [created]
+  workflow_dispatch: # Allows manual triggering
 
 jobs:
-  check:
+  prepare:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-      - run: pnpm install
-      - run: pnpm check
-      - run: pnpm test
-      - run: pnpm build
+    permissions:
+      contents: write
 
-  publish:
-    if: github.ref == 'refs/heads/main'
-    needs: [check]
-    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          ref: main
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          cache: true
+      - run: vp install
+      - run: vp check
+      - run: vp test
+
+      - name: Sync Version and Commit
+        if: github.event_name == 'release'
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('package.json')); pkg.version = '$VERSION'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
+          node -e "const fs = require('fs'); const jsr = JSON.parse(fs.readFileSync('jsr.json')); jsr.version = '$VERSION'; fs.writeFileSync('jsr.json', JSON.stringify(jsr, null, 2) + '\n');"
+          vp check --fix package.json jsr.json || true
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git add package.json jsr.json
+            git commit --no-verify -m "chore: release v$VERSION [skip ci]"
+            git push origin main
+            git tag -f $GITHUB_REF_NAME
+            git push origin $GITHUB_REF_NAME -f
+          fi
+
+  publish-npm:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
           registry-url: "https://registry.npmjs.org"
-      - run: pnpm install
-      - run: pnpm build
-      - run: pnpm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-```
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          cache: true
+      - run: vp install
+      - run: vp pack
+      - run: npm publish --access public --provenance
 
-Adjust secrets, registry URL, and job names as needed. For JSR publishing, add a `npx jsr publish` step.
+  publish-jsr:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          cache: true
+      - run: vp install
+      - run: vp pack
+      - run: npx jsr publish
+```
 
 ---
 
