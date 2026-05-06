@@ -53,12 +53,7 @@ function ToggleRow(props: {
 /** shadcn-styled `renderControls` for {@link MediaUploadSkeletonProps}. */
 export function MediaUploadShadcnControls(props: MediaUploadSkeletonProps) {
   const resOpts = props.resolutionOptions ?? DEFAULT_MAX_RESOLUTION_OPTIONS;
-  const {
-    className: dropClassName,
-    onDrop: _drop,
-    onDragOver: _drag,
-    ...dropRest
-  } = props.dropTargetProps ?? {};
+  const { className: dropClassName, ...dropRest } = props.dropTargetProps ?? {};
 
   return (
     <Card className="border-border/80 shadow-md">

@@ -73,7 +73,7 @@ function DefaultUploadQueue(props: {
             <button
               type="button"
               className="text-primary shrink-0 text-xs underline"
-              onClick={() => props.onRetry(item.id)}
+              onClick={() => props.onRetry?.(item.id)}
             >
               {lb.retry}
             </button>
@@ -88,12 +88,7 @@ export function MediaUploadSkeleton(props: MediaUploadSkeletonProps) {
   const lb = { ...defaultLabels, ...props.labels };
   const cn = props.classNames ?? {};
   const resOpts = props.resolutionOptions ?? DEFAULT_MAX_RESOLUTION_OPTIONS;
-  const {
-    className: dropExtraClass,
-    onDrop: _userDrop,
-    onDragOver: _userDragOver,
-    ...dropSpread
-  } = props.dropTargetProps ?? {};
+  const { className: dropExtraClass, ...dropSpread } = props.dropTargetProps ?? {};
 
   if (props.renderControls) {
     return (

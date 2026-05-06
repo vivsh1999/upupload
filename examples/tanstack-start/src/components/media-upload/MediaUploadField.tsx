@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { toast } from "sonner";
 
 import { MediaUploadSkeleton } from "./MediaUploadSkeleton";
-import type { MediaUploadFieldProps } from "./types";
+import type { MaxLongEdgePreset, MediaUploadFieldProps } from "./types";
 import { useMediaUpload } from "./useMediaUpload";
 
 export function MediaUploadField(props: MediaUploadFieldProps) {
@@ -75,7 +75,7 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
         onSaveThumbnailsChange={(value) => media.updateConfig({ saveThumbnails: value })}
         qualityPercent={media.config.qualityPercent}
         onQualityPercentChange={(value) => media.updateConfig({ qualityPercent: value })}
-        maxLongEdge={media.config.maxLongEdge}
+        maxLongEdge={media.config.maxLongEdge as MaxLongEdgePreset}
         onMaxLongEdgeChange={(value) => media.updateConfig({ maxLongEdge: value })}
         resolutionOptions={resolutionOptions}
         fileInputRef={fileInputRef}

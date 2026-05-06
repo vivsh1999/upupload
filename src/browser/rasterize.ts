@@ -16,7 +16,8 @@ export async function jpegFileFromImageData(
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
 
-  const imageData = new ImageData(data, width, height);
+  const imageData = ctx.createImageData(width, height);
+  imageData.data.set(data);
   ctx.putImageData(imageData, 0, 0);
 
   const q = options?.quality ?? 0.92;

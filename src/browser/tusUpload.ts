@@ -44,7 +44,7 @@ export function uploadArtifactWithTus(options: {
     });
 
     const onAbort = () => {
-      upload.abort(true);
+      void upload.abort(true);
     };
     if (signal) {
       if (signal.aborted) {

@@ -18,12 +18,18 @@ importers:
         specifier: ^4.3.1
         version: 4.3.1
     devDependencies:
+      '@types/react':
+        specifier: ^19.2.0
+        version: 19.2.14
       canvas:
         specifier: ^3.1.0
         version: 3.2.3
       jsdom:
         specifier: ^28.1.0
         version: 28.1.0(canvas@3.2.3)
+      react:
+        specifier: ^19.2.0
+        version: 19.2.5
       typescript:
         specifier: ^6.0.2
         version: 6.0.3

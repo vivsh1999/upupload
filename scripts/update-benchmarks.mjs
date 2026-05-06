@@ -7,7 +7,7 @@ try {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"],
   });
-} catch (e) {
+} catch {
   console.error("Benchmarks failed — aborting.");
   process.exit(1);
 }

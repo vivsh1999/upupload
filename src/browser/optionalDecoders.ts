@@ -3,10 +3,7 @@ import { blobToArrayBuffer, jpegFileFromImageData } from "./rasterize";
 
 async function optionalImport<TModule = unknown>(moduleName: string): Promise<TModule | null> {
   try {
-    // Avoid bundlers trying to resolve optional dependencies at build time.
-    // eslint-disable-next-line no-new-func
-    const importer = new Function("m", "return import(m)") as (m: string) => Promise<TModule>;
-    return await importer(moduleName);
+    return await import(moduleName);
   } catch {
     return null;
   }

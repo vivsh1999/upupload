@@ -36,10 +36,14 @@ globalThis.__MEDIA_PIPELINE_DOM_CANVAS = await (async (): Promise<boolean> => {
     const proto = globalThis.HTMLCanvasElement?.prototype;
     if (!proto) return false;
 
-    proto.getContext = function (this: HTMLCanvasElement, type: string, ...args: unknown[]) {
+    (proto as any).getContext = function (
+      this: HTMLCanvasElement,
+      type: string,
+      ...args: unknown[]
+    ) {
       if (type === "2d") {
         const c = ensureBacking(this);
-        return c.getContext("2d", ...(args as [])) as CanvasRenderingContext2D | null;
+        return c.getContext("2d", ...(args as [])) as unknown as CanvasRenderingContext2D | null;
       }
       return null;
     };
@@ -60,11 +64,11 @@ globalThis.__MEDIA_PIPELINE_DOM_CANVAS = await (async (): Promise<boolean> => {
         if (mime === "image/jpeg" || mime === "image/jpg") {
           const q = quality === undefined ? 0.92 : quality;
           const buf = c.toBuffer("image/jpeg", { quality: q });
-          callback(new Blob([buf], { type: mime }));
+          callback(new Blob([new Uint8Array(buf)], { type: mime }));
           return;
         }
         const buf = c.toBuffer("image/png");
-        callback(new Blob([buf], { type: mime }));
+        callback(new Blob([new Uint8Array(buf)], { type: mime }));
       } catch {
         callback(null);
       }
