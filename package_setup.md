@@ -207,6 +207,49 @@ Adjust secrets, registry URL, and job names as needed. For JSR publishing, add a
 
 ---
 
+## 3.1 JSDoc Documentation for JSR
+
+JSR generates API documentation from JSDoc comments in source code.
+
+### Symbol Documentation
+
+Add JSDoc above every exported symbol:
+
+````ts
+/**
+ * Search the database with the given query.
+ * @param query Search query (max 50 chars).
+ * @param limit Number of results to return. Defaults to 20.
+ * @returns Array of matched items.
+ * @example
+ * ```ts
+ * search("Alan") // ["Alan Turing", "Alan Kay"]
+ * ```
+ */
+export function search(query: string, limit = 20): string[];
+````
+
+- `{@link search}` creates clickable cross-references to other symbols.
+- Annotate interface properties, class methods, and constructor params similarly.
+
+### Module Documentation
+
+Add at the top of each exported module file:
+
+```ts
+/**
+ * This module contains functions to search the database.
+ * @module
+ */
+```
+
+- Module docs appear on the package's **Overview** tab, replacing the README by default. Change this in the package Settings tab (**Readme Source** → "Readme").
+- Custom wildcard import name: `/** @module myModule */` makes `import * as myModule from "..."` instead of `import * as mod from "..."`.
+
+See: https://jsr.io/docs/writing-docs
+
+---
+
 ## 4. Development Workflow
 
 ```bash

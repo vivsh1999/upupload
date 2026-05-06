@@ -63,8 +63,32 @@ skills:
 - when: "Server-side runtime for TanStack Start: createStartHandler, request/response utilities (getRequest, setResponseHeader, setCookie, getCookie, useSession), three-phase request handling, AsyncLocalStorage context."
   use: "@tanstack/start-server-core#start-server-core"
 - when: "Programmatic route tree building as an alternative to filesystem conventions: rootRoute, index, route, layout, physical, defineVirtualSubtreeConfig. Use with TanStack Router plugin's virtualRouteConfig option."
-use: "@tanstack/virtual-file-routes#virtual-file-routes"
+  use: "@tanstack/virtual-file-routes#virtual-file-routes"
+- when: "Write JSDoc-style documentation for JSR-published packages. Symbol docs via JSDoc above exports (functions, interfaces, classes, types). Module docs via `@module` tag at top of file. Supported tags: `@param`, `@returns`, `@example`, `{@link}`. Custom wildcard import identifiers via `@module <name>`. Overview tab behavior controlled by module doc vs README setting."
+use: "jsr#writing-docs"
 <!-- intent-skills:end -->
+
+# Documentation (JSR)
+
+JSR generates API documentation from JSDoc comments in source code.
+
+## Symbol Documentation
+
+Add JSDoc above exported symbols (`/** ... */`) with:
+
+- `@param` — describe function parameters
+- `@returns` — describe return value
+- `@example` — show usage with \`\`\`ts code blocks
+- `{@link}` — create clickable cross-reference links
+
+## Module Documentation
+
+Add a JSDoc comment at the top of a module file with `@module`:
+
+- `/** Overview of this module's purpose. @module */` — shown on package "Overview" tab (overrides README by default; toggle via Settings > Readme Source)
+- Custom wildcard import identifier: `/** @module <name> */` makes `import * as <name> from "..."` use the custom name instead of `mod`
+
+See: https://jsr.io/docs/writing-docs
 
 # Publishing
 
