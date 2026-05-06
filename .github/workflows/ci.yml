@@ -136,6 +136,7 @@ jobs:
         if: github.event_name == 'release'
         run: |
           node -e "const fs = require('fs'); const jsr = JSON.parse(fs.readFileSync('jsr.json')); jsr.version = '${{ needs.prepare.outputs.version }}'; fs.writeFileSync('jsr.json', JSON.stringify(jsr, null, 2) + '\n');"
+          git add . && git commit --no-verify -m "sync jsr.json version [skip ci]" || true
 
       - name: Build project
         run: vp pack
