@@ -76,6 +76,7 @@ pnpm publish
 ```
 
 Requirements:
+
 - Logged into npm (`npm login`)
 - Package is public (already configured via `publishConfig.access = "public"`)
 - Version bump as needed before publish
@@ -88,5 +89,6 @@ npx jsr publish
 ```
 
 Requirements:
+
 - Authenticated at https://jsr.io (run `npx jsr auth` or use `JSR_TOKEN` env var)
 - Version bump as needed before publish

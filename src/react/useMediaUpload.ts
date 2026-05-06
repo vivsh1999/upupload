@@ -1,4 +1,3 @@
-import type { DragEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -407,42 +406,64 @@ export function useMediaUpload(options: UseMediaUploadOptions = {}): UseMediaUpl
     setConfig((prev) => ({ ...prev, ...patch }));
   };
 
-  const getFileInputProps = (
-    props: Omit<React.ComponentProps<"input">, "type" | "multiple"> = {},
-  ): React.ComponentProps<"input"> => ({
-    ...props,
-    type: "file",
-    multiple: true,
-    onChange: (event) => {
-      props.onChange?.(event);
-      void addFiles(event.currentTarget.files);
-      event.currentTarget.value = "";
-    },
-  });
+  const getFileInputProps = <T extends Record<string, unknown>>(
+    props: T = {} as T,
+  ): T & {
+    type: "file";
+    multiple: true;
+    onChange: (event: Event) => void;
+  } => {
+    const prevOnChange = (props as Record<string, unknown>).onChange as
+      | ((event: Event) => void)
+      | undefined;
+    return {
+      ...props,
+      type: "file" as const,
+      multiple: true as const,
+      onChange: (event) => {
+        prevOnChange?.(event);
+        const input = event.currentTarget as HTMLInputElement | null;
+        void addFiles(input?.files);
+        if (input) input.value = "";
+      },
+    };
+  };
 
-  const getFolderInputProps = (
-    props: Omit<React.ComponentProps<"input">, "type" | "multiple"> = {},
-  ): React.ComponentProps<"input"> => ({
-    ...props,
-    type: "file",
-    multiple: true,
-    ...({ webkitdirectory: "", directory: "" } as Record<string, string>),
-    onChange: (event) => {
-      props.onChange?.(event);
-      void addFiles(event.currentTarget.files);
-      event.currentTarget.value = "";
-    },
-  });
+  const getFolderInputProps = <T extends Record<string, unknown>>(
+    props: T = {} as T,
+  ): T & {
+    type: "file";
+    multiple: true;
+    onChange: (event: Event) => void;
+  } => {
+    const prevOnChange = (props as Record<string, unknown>).onChange as
+      | ((event: Event) => void)
+      | undefined;
+    return {
+      ...props,
+      type: "file" as const,
+      multiple: true as const,
+      ...({ webkitdirectory: "", directory: "" } as Record<string, string>),
+      onChange: (event) => {
+        prevOnChange?.(event);
+        const input = event.currentTarget as HTMLInputElement | null;
+        void addFiles(input?.files);
+        if (input) input.value = "";
+      },
+    };
+  };
 
-  const getDropTargetProps = (
-    props: Omit<React.HTMLAttributes<HTMLDivElement>, "onDrop" | "onDragOver"> = {},
-  ): React.HTMLAttributes<HTMLDivElement> => ({
+  const getDropTargetProps = <T extends Record<string, unknown>>(
+    props: T = {} as T,
+  ): T & {
+    onDrop: (event: DragEvent) => void;
+    onDragOver: (event: DragEvent) => void;
+  } => ({
     ...props,
-    onDrop: (event: DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      void addFiles(event.dataTransfer?.files);
+    onDrop: (event: DragEvent) => {
+      addFiles(event.dataTransfer?.files);
     },
-    onDragOver: (event: DragEvent<HTMLDivElement>) => {
+    onDragOver: (event: DragEvent) => {
       event.preventDefault();
     },
   });

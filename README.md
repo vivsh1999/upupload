@@ -12,4 +12,7 @@ Client-first, multi-stage media uploader/processor with safe fallback-to-origina
 - `examples/vanilla-html` – plain HTML + ES modules using `@vivsh1999/upupload/browser`
 
 import { useMediaUpload } from "@vivsh1999/upupload/react";
+
+```
+
 ```

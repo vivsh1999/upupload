@@ -30,26 +30,26 @@ The on-disk object name under each folder is a random id (no extension); origina
 
 ## Configuration
 
-| Item                | Location / notes                                                                                          |
-| ------------------- | --------------------------------------------------------------------------------------------------------- |
-| TUS route           | `src/lib/tus-path.ts` → `TUS_API_PATH` (`/api/tus`)                                                       |
-| Dev middleware      | `vite.config.ts` — `installDevServerMiddleware: true` so `/api/tus` hits `src/server.ts` under Vite 8     |
+| Item                | Location / notes                                                                                               |
+| ------------------- | -------------------------------------------------------------------------------------------------------------- |
+| TUS route           | `src/lib/tus-path.ts` → `TUS_API_PATH` (`/api/tus`)                                                            |
+| Dev middleware      | `vite.config.ts` — `installDevServerMiddleware: true` so `/api/tus` hits `src/server.ts` under Vite 8          |
 | Client TUS endpoint | `@vivsh1999/upupload` hook defaults to `origin + /api/tus/`; override via `tus.endpoint` on `MediaUploadField` |
-| Pipeline            | `src/components/UppyUploader.tsx` → `initialConfig` on `MediaUploadField`                                 |
-| Picker accept list  | `src/lib/media-picker-accept.ts`                                                                          |
+| Pipeline            | `src/components/UppyUploader.tsx` → `initialConfig` on `MediaUploadField`                                      |
+| Picker accept list  | `src/lib/media-picker-accept.ts`                                                                               |
 
 ---
 
 ## Key source files
 
-| Path                                               | Role                                                 |
-| -------------------------------------------------- | ---------------------------------------------------- |
-| `src/server.ts`                                    | TUS `Server`, `FileStore`, `onUploadCreate` / finish |
-| `src/components/media-upload/MediaUploadField.tsx` | UI + `useMediaUpload` from `@vivsh1999/upupload/react`    |
-| `src/components/UppyUploader.tsx`                  | Example wiring + pipeline defaults + picker `accept` |
-| `src/lib/media-picker-accept.ts`                   | Broad file input `accept`                            |
-| `src/lib/media-allowlist.ts`                       | Server-side upload gate (still used by `server.ts`)  |
-| `src/lib/tus-variant-path.ts`                      | `variant` ↔ subdirectory mapping                     |
+| Path                                               | Role                                                   |
+| -------------------------------------------------- | ------------------------------------------------------ |
+| `src/server.ts`                                    | TUS `Server`, `FileStore`, `onUploadCreate` / finish   |
+| `src/components/media-upload/MediaUploadField.tsx` | UI + `useMediaUpload` from `@vivsh1999/upupload/react` |
+| `src/components/UppyUploader.tsx`                  | Example wiring + pipeline defaults + picker `accept`   |
+| `src/lib/media-picker-accept.ts`                   | Broad file input `accept`                              |
+| `src/lib/media-allowlist.ts`                       | Server-side upload gate (still used by `server.ts`)    |
+| `src/lib/tus-variant-path.ts`                      | `variant` ↔ subdirectory mapping                       |
 
 ---
 

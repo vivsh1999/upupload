@@ -1,6 +1,5 @@
 import type { PipelineSource } from "../core";
 import type { DefaultBrowserPipelineOptions } from "../browser";
-import type * as React from "react";
 
 export type MediaUploadQueueStatus = "idle" | "processing" | "uploading" | "error";
 
@@ -63,15 +62,26 @@ export type UseMediaUploadResult = {
   retry: (fileId: string) => void;
   cancel: (fileId?: string) => void;
   updateConfig: (patch: Partial<DefaultBrowserPipelineOptions>) => void;
-  getFileInputProps: (
-    props?: Omit<React.ComponentProps<"input">, "type" | "multiple">,
-  ) => React.ComponentProps<"input">;
-  getFolderInputProps: (
-    props?: Omit<React.ComponentProps<"input">, "type" | "multiple">,
-  ) => React.ComponentProps<"input">;
-  getDropTargetProps: (
-    props?: Omit<React.HTMLAttributes<HTMLDivElement>, "onDrop" | "onDragOver">,
-  ) => React.HTMLAttributes<HTMLDivElement>;
+  getFileInputProps: <T extends Record<string, unknown>>(
+    props?: T,
+  ) => T & {
+    type: "file";
+    multiple: true;
+    onChange: (event: Event) => void;
+  };
+  getFolderInputProps: <T extends Record<string, unknown>>(
+    props?: T,
+  ) => T & {
+    type: "file";
+    multiple: true;
+    onChange: (event: Event) => void;
+  };
+  getDropTargetProps: <T extends Record<string, unknown>>(
+    props?: T,
+  ) => T & {
+    onDrop: (event: DragEvent) => void;
+    onDragOver: (event: DragEvent) => void;
+  };
   /** For advanced usage; the raw sources waiting to run through pipeline. */
   getSources: () => PipelineSource[];
 };

@@ -112,7 +112,10 @@ export function isAudioLike(file: { name: string; type?: string | null }): boole
   return mime.startsWith("audio/") || AUDIO_EXTENSIONS.has(ext);
 }
 
-export function shouldUploadWithoutTranscode(file: { name: string; type?: string | null }): boolean {
+export function shouldUploadWithoutTranscode(file: {
+  name: string;
+  type?: string | null;
+}): boolean {
   const ext = fileExtensionLower(file.name);
   const mime = (file.type ?? "").toLowerCase();
 
