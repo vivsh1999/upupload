@@ -11,15 +11,12 @@ jobs:
     permissions:
       contents: write # Required for committing and pushing updates back to main
 
-    outputs:
-      version: ${{ steps.set_version.outputs.version }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: main
-          fetch-depth: 0
+          ref: main # Check out main branch instead of detached tag
+          fetch-depth: 0 # Required to force update the tag later
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -75,14 +72,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
-    continue-on-error: true
+      id-token: write # Required for npm provenance
+    continue-on-error: true # Allow one publish to fail while the other succeeds
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: main # Fetch the latest commit with the version bump
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -97,6 +94,7 @@ jobs:
 
       - name: Install dependencies
         run: vp install
+
       - name: Build project
         run: vp pack
 
@@ -108,14 +106,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
-    continue-on-error: true
+      id-token: write # Required for jsr provenance
+    continue-on-error: true # Allow one publish to fail while the other succeeds
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: main # Fetch the latest commit with the version bump
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
