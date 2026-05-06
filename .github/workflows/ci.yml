@@ -11,12 +11,15 @@ jobs:
     permissions:
       contents: write # Required for committing and pushing updates back to main
 
+    outputs:
+      version: ${{ steps.set_version.outputs.version }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: main # Check out main branch instead of detached tag
-          fetch-depth: 0 # Required to force update the tag later
+          ref: main
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -37,49 +40,45 @@ jobs:
       - name: Run tests
         run: vp test
 
-      - name: Sync Version and Commit
+      - name: Sync Version
         if: github.event_name == 'release'
+        id: set_version
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           echo "Setting version to $VERSION"
 
-          # Setup Git
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # Update package.json
           node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('package.json')); pkg.version = '$VERSION'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
-
-          # Update jsr.json
           node -e "const fs = require('fs'); const jsr = JSON.parse(fs.readFileSync('jsr.json')); jsr.version = '$VERSION'; fs.writeFileSync('jsr.json', JSON.stringify(jsr, null, 2) + '\n');"
 
-          # Format json files with vp to ensure they pass CI
           vp check --fix package.json jsr.json || true
 
-          # Commit and Push if there are changes
-          if [[ -n "$(git status --porcelain)" ]]; then
-            git add package.json jsr.json
-            git commit --no-verify -m "chore: release v$VERSION [skip ci]"
-            git push origin main
-            
-            # Re-point the release tag to this new commit
-            git tag -f $GITHUB_REF_NAME
-            git push origin $GITHUB_REF_NAME -f
-          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Commit Version Bump
+        if: github.event_name == 'release'
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json jsr.json
+          git commit --no-verify -m "chore: release v$VERSION [skip ci]" || true
+          git push origin main
+          git tag -f $GITHUB_REF_NAME
+          git push origin $GITHUB_REF_NAME -f
 
   publish-npm:
     needs: prepare
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # Required for npm provenance
-    continue-on-error: true # Allow one publish to fail while the other succeeds
+      id-token: write
+    continue-on-error: true
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: main # Fetch the latest commit with the version bump
+          ref: main
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -95,6 +94,11 @@ jobs:
       - name: Install dependencies
         run: vp install
 
+      - name: Sync version
+        if: github.event_name == 'release'
+        run: |
+          node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('package.json')); pkg.version = '${{ needs.prepare.outputs.version }}'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
+
       - name: Build project
         run: vp pack
 
@@ -106,14 +110,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # Required for jsr provenance
-    continue-on-error: true # Allow one publish to fail while the other succeeds
+      id-token: write
+    continue-on-error: true
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: main # Fetch the latest commit with the version bump
+          ref: main
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -127,6 +131,11 @@ jobs:
 
       - name: Install dependencies
         run: vp install
+
+      - name: Sync version
+        if: github.event_name == 'release'
+        run: |
+          node -e "const fs = require('fs'); const jsr = JSON.parse(fs.readFileSync('jsr.json')); jsr.version = '${{ needs.prepare.outputs.version }}'; fs.writeFileSync('jsr.json', JSON.stringify(jsr, null, 2) + '\n');"
 
       - name: Build project
         run: vp pack
