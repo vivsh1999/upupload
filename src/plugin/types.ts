@@ -40,6 +40,18 @@ export interface ProcessingPlugin<TOpts = Record<string, unknown>> {
     ctx: PipelineContext,
   ): PipelineStage<PipelineSource, PipelineResult>[];
 
+  /**
+   * IDs of plugins whose stages must run **before** this plugin's stages.
+   * The pipeline will topological-sort plugins based on these constraints.
+   */
+  after?: string[];
+
+  /**
+   * IDs of plugins whose stages must run **after** this plugin's stages.
+   * The pipeline will topological-sort plugins based on these constraints.
+   */
+  before?: string[];
+
   /** Optional: pre-warm decoders / WASM / etc for files handled by this plugin. */
   preload?(): void;
 }

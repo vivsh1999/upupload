@@ -61,7 +61,7 @@ async function videoPosterFile(source: File, maxEdge: number): Promise<File | nu
 export function preloadBrowserPipelineForFiles(
   files: Array<{ name: string; type?: string | null }>,
   opts: Pick<DefaultBrowserPipelineOptions, "saveOptimized" | "saveThumbnails">,
-  extra?: { plugins?: ProcessingPlugin[] },
+  extra?: { plugins?: ProcessingPlugin<DefaultBrowserPipelineOptions>[] },
 ) {
   if (!opts.saveOptimized && !opts.saveThumbnails) return;
   const plugins = extra?.plugins ?? [];
@@ -76,10 +76,59 @@ export function preloadBrowserPipelineForFiles(
   }
 }
 
+function topologicalSort(
+  plugins: ProcessingPlugin<DefaultBrowserPipelineOptions>[],
+): ProcessingPlugin<DefaultBrowserPipelineOptions>[] {
+  const byId = new Map<string, ProcessingPlugin<DefaultBrowserPipelineOptions>>();
+  const inDegree = new Map<string, number>();
+  const adj = new Map<string, string[]>();
+
+  for (const p of plugins) {
+    byId.set(p.id, p);
+    if (!inDegree.has(p.id)) inDegree.set(p.id, 0);
+    if (!adj.has(p.id)) adj.set(p.id, []);
+
+    if (p.after) {
+      for (const depId of p.after) {
+        if (!adj.has(depId)) adj.set(depId, []);
+        adj.get(depId)!.push(p.id);
+        inDegree.set(p.id, (inDegree.get(p.id) ?? 0) + 1);
+      }
+    }
+
+    if (p.before) {
+      for (const depId of p.before) {
+        adj.get(p.id)!.push(depId);
+        if (!inDegree.has(depId)) inDegree.set(depId, 0);
+        inDegree.set(depId, (inDegree.get(depId) ?? 0) + 1);
+      }
+    }
+  }
+
+  const queue: string[] = [];
+  for (const [id, deg] of inDegree) {
+    if (deg === 0) queue.push(id);
+  }
+
+  const sorted: ProcessingPlugin<DefaultBrowserPipelineOptions>[] = [];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    const plugin = byId.get(id);
+    if (plugin) sorted.push(plugin);
+    for (const next of adj.get(id) ?? []) {
+      const deg = inDegree.get(next)! - 1;
+      inDegree.set(next, deg);
+      if (deg === 0) queue.push(next);
+    }
+  }
+
+  return sorted;
+}
+
 export async function runDefaultBrowserPipeline(
   input: PipelineSource,
   opts: DefaultBrowserPipelineOptions,
-  extra?: { plugins?: ProcessingPlugin[]; signal?: AbortSignal },
+  extra?: { plugins?: ProcessingPlugin<DefaultBrowserPipelineOptions>[]; signal?: AbortSignal },
 ): Promise<PipelineResult> {
   const plugins = extra?.plugins ?? [];
   const signal = extra?.signal;
@@ -113,13 +162,15 @@ export async function runDefaultBrowserPipeline(
 
   const ctx: PipelineContext = { log, shared: new Map(), signal };
 
+  const matchedPlugins = plugins.filter((p) => p.supports(input));
+
+  const sorted = topologicalSort(matchedPlugins);
+
   const pluginStages: PipelineStage<PipelineSource, PipelineResult>[] = [];
-  for (const plugin of plugins) {
-    if (plugin.supports(input)) {
-      const stages = plugin.createStages(input, opts as Record<string, unknown>, classif, ctx);
-      for (let i = 0; i < stages.length; i++) {
-        pluginStages.push(stages[i]!);
-      }
+  for (const plugin of sorted) {
+    const stages = plugin.createStages(input, opts, classif, ctx);
+    for (let i = 0; i < stages.length; i++) {
+      pluginStages.push(stages[i]!);
     }
   }
 

@@ -142,6 +142,34 @@ export function useMediaUpload<TMeta = void>(
   const filesRef = useRef<Map<string, File>>(new Map());
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
 
+  const semRef = useRef(new Semaphore(tuning?.simultaneousUploads ?? 4));
+  useEffect(() => {
+    semRef.current = new Semaphore(tuning?.simultaneousUploads ?? 4);
+  }, [tuning?.simultaneousUploads]);
+
+  const processOptionsRef = useRef({
+    config,
+    transport,
+    tus,
+    uploadHandler,
+    plugins,
+    onInfo,
+    onWarning,
+    onFileComplete,
+    onError,
+  });
+  processOptionsRef.current = {
+    config,
+    transport,
+    tus,
+    uploadHandler,
+    plugins,
+    onInfo,
+    onWarning,
+    onFileComplete,
+    onError,
+  };
+
   const updateConfig = useCallback((patch: Partial<DefaultBrowserPipelineOptions>) => {
     setConfig((prev) => ({ ...prev, ...patch }));
   }, []);
@@ -166,9 +194,8 @@ export function useMediaUpload<TMeta = void>(
       }
 
       setQueue((prev) => [...prev, ...newItems]);
-      onInfo?.("Files added to queue");
     },
-    [maxNumberOfFiles, onInfo, getMeta],
+    [maxNumberOfFiles, getMeta],
   );
 
   const getFileInputProps = useCallback(
@@ -252,6 +279,18 @@ export function useMediaUpload<TMeta = void>(
 
   const processFile = useCallback(
     async (item: MediaUploadQueueItem<TMeta>, file: File): Promise<void> => {
+      const {
+        config,
+        transport,
+        tus,
+        uploadHandler,
+        plugins,
+        onInfo,
+        onWarning,
+        onFileComplete,
+        onError,
+      } = processOptionsRef.current;
+
       const controller = new AbortController();
       abortControllersRef.current.set(item.id, controller);
 
@@ -274,6 +313,14 @@ export function useMediaUpload<TMeta = void>(
         });
 
         if (controller.signal.aborted) return;
+
+        for (const msg of result.info) {
+          if (msg.level === "warn") {
+            onWarning?.(msg.message);
+          } else {
+            onInfo?.(msg.message);
+          }
+        }
 
         if (result.removeFromQueue) {
           setQueue((prev) => prev.filter((q) => q.id !== item.id));
@@ -370,37 +417,31 @@ export function useMediaUpload<TMeta = void>(
         abortControllersRef.current.delete(item.id);
       }
     },
-    [config, transport, tus, uploadHandler, plugins, onFileComplete, onError],
+    [],
   );
 
-  const startUpload = useCallback(
-    async (fileIds?: string[]) => {
-      const items = fileIds
-        ? queueRef.current.filter((q) => fileIds.includes(q.id))
-        : queueRef.current;
+  const startUpload = useCallback(async (fileIds?: string[]) => {
+    const items = fileIds
+      ? queueRef.current.filter((q) => fileIds.includes(q.id))
+      : queueRef.current;
 
-      const pending = items.filter((q) => q.status === "idle");
-      if (pending.length === 0) return;
+    const pending = items.filter((q) => q.status === "idle");
+    if (pending.length === 0) return;
 
-      setIsBusy(true);
+    setIsBusy(true);
 
-      try {
-        const concurrency = tuning?.simultaneousUploads ?? 4;
-        const sem = new Semaphore(concurrency);
-
-        await Promise.all(
-          pending.map((item) => {
-            const file = filesRef.current.get(item.id);
-            if (!file) return Promise.resolve();
-            return sem.run(() => processFile(item, file));
-          }),
-        );
-      } finally {
-        setIsBusy(false);
-      }
-    },
-    [tuning?.simultaneousUploads, processFile],
-  );
+    try {
+      await Promise.all(
+        pending.map((item) => {
+          const file = filesRef.current.get(item.id);
+          if (!file) return Promise.resolve();
+          return semRef.current.run(() => processFile(item, file));
+        }),
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  }, []);
 
   const cancelUpload = useCallback((fileId: string) => {
     abortControllersRef.current.get(fileId)?.abort();

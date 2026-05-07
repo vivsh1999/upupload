@@ -1,3 +1,4 @@
+/** @module plugins/raw-to-jpeg */
 import type { PipelineContext, PipelineResult, PipelineSource, PipelineStage } from "../core/types";
 import { fileExtensionLower, RAW_EXTENSIONS } from "../browser/allowlist";
 import { tryDecodeHeicToJpegFile, tryDecodeTiffToJpegFile } from "../browser/optionalDecoders";
@@ -31,6 +32,11 @@ function maxWidthOrHeight(preset: DefaultBrowserPipelineOptions["maxLongEdge"]) 
   return preset === "original" ? undefined : preset;
 }
 
+/**
+ * Create a plugin that decodes RAW/HEIC/TIFF camera images to JPEG.
+ * Uses `libraw-wasm`, `heic-decode`/`heic2any`, and `utif` under the hood.
+ * @returns A {@link ProcessingPlugin} configured for RAW, HEIC, and TIFF inputs.
+ */
 export function createRawToJpegPlugin(): ProcessingPlugin<DefaultBrowserPipelineOptions> {
   return {
     id: "raw-to-jpeg",

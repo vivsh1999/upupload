@@ -43,6 +43,16 @@
       "import": "./dist/plugin/raw-to-jpeg.mjs",
       "default": "./dist/plugin/raw-to-jpeg.mjs"
     },
+    "./plugins/testing": {
+      "types": "./dist/plugin/test-utils.d.mts",
+      "import": "./dist/plugin/test-utils.mjs",
+      "default": "./dist/plugin/test-utils.mjs"
+    },
+    "./preset": {
+      "types": "./dist/preset/index.d.mts",
+      "import": "./dist/preset/index.mjs",
+      "default": "./dist/preset/index.mjs"
+    },
     "./react": {
       "types": "./dist/react/index.d.mts",
       "import": "./dist/react/index.mjs",
@@ -59,8 +69,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vp pack src/index.ts src/core/index.ts src/browser/index.ts src/plugin/index.ts src/plugin/jpeg-compressor.ts src/plugin/raw-to-jpeg.ts src/react/index.ts src/server/index.ts",
-    "dev": "vp pack src/index.ts src/core/index.ts src/browser/index.ts src/plugin/index.ts src/plugin/jpeg-compressor.ts src/plugin/raw-to-jpeg.ts src/react/index.ts src/server/index.ts --watch",
+    "build": "vp pack src/index.ts src/core/index.ts src/browser/index.ts src/plugin/index.ts src/plugin/jpeg-compressor.ts src/plugin/raw-to-jpeg.ts src/plugin/test-utils.ts src/react/index.ts src/server/index.ts src/preset/index.ts",
+    "dev": "vp pack src/index.ts src/core/index.ts src/browser/index.ts src/plugin/index.ts src/plugin/jpeg-compressor.ts src/plugin/raw-to-jpeg.ts src/plugin/test-utils.ts src/react/index.ts src/server/index.ts src/preset/index.ts --watch",
     "test": "vp test",
     "check": "vp check",
     "prepublishOnly": "vp run build",

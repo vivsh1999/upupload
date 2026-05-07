@@ -32,11 +32,47 @@ export function compose(
 
 /**
  * Create a single-stage pipeline definition.
+ *
+ * Accepts either a full `PipelineStage` object, or shorthand `(id, run)`
+ * that creates an unconditional stage (always runs).
+ *
+ * @example
+ * // Shorthand — unconditional stage
+ * stage("resize", async (input, ctx) => { ... })
+ *
+ * @example
+ * // Full stage with guard
+ * stage({ id: "resize", when: ..., run: ... })
  */
 export function stage(
   s: PipelineStage<PipelineSource, PipelineResult>,
+): PipelineDefinition<PipelineSource, PipelineResult>;
+export function stage(
+  id: string,
+  run: PipelineStage<PipelineSource, PipelineResult>["run"],
+): PipelineDefinition<PipelineSource, PipelineResult>;
+export function stage(
+  idOrStage: string | PipelineStage<PipelineSource, PipelineResult>,
+  run?: PipelineStage<PipelineSource, PipelineResult>["run"],
 ): PipelineDefinition<PipelineSource, PipelineResult> {
-  return { stages: [s] };
+  if (typeof idOrStage === "string") {
+    return { stages: [{ id: idOrStage, when: () => ({ run: true }), run: run! }] };
+  }
+  return { stages: [idOrStage] };
+}
+
+/**
+ * Type-safe read from a shared pipeline context map.
+ */
+export function sharedGet<T>(shared: Map<string, unknown>, key: string): T | undefined {
+  return shared.get(key) as T | undefined;
+}
+
+/**
+ * Type-safe write to a shared pipeline context map.
+ */
+export function sharedSet<T>(shared: Map<string, unknown>, key: string, value: T): void {
+  shared.set(key, value);
 }
 
 /**

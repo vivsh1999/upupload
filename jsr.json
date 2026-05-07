@@ -10,6 +10,8 @@
     "./plugins": "./src/plugin/index.ts",
     "./plugins/jpeg-compressor": "./src/plugin/jpeg-compressor.ts",
     "./plugins/raw-to-jpeg": "./src/plugin/raw-to-jpeg.ts",
+    "./plugins/testing": "./src/plugin/test-utils.ts",
+    "./preset": "./src/preset/index.ts",
     "./react": "./src/react/index.ts",
     "./server": "./src/server/index.ts"
   },

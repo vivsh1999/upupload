@@ -1,3 +1,4 @@
+/** @module plugins/jpeg-compressor */
 import type { PipelineContext, PipelineResult, PipelineSource, PipelineStage } from "../core/types";
 import { fileExtensionLower, RASTER_IMAGE_EXTENSIONS, RAW_EXTENSIONS } from "../browser/allowlist";
 import type { DefaultBrowserPipelineOptions } from "../browser/pipeline-utils";
@@ -44,6 +45,11 @@ function isNonRawRasterImage(file: { name: string; type?: string | null }): bool
   return true;
 }
 
+/**
+ * Create a plugin that compresses JPEG/PNG/WebP/BMP/GIF/AVIF images to JPEG.
+ * Uses `browser-image-compression` under the hood.
+ * @returns A {@link ProcessingPlugin} configured for non-RAW raster images.
+ */
 export function createJpegCompressorPlugin(): ProcessingPlugin<DefaultBrowserPipelineOptions> {
   return {
     id: "jpeg-compressor",
