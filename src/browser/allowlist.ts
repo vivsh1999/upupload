@@ -16,7 +16,7 @@ export const RAW_EXTENSIONS: Set<string> = new Set([
   ".x3f",
 ]);
 
-const VIDEO_EXTENSIONS = new Set([
+export const VIDEO_EXTENSIONS: ReadonlySet<string> = new Set([
   ".mp4",
   ".m4v",
   ".mkv",
@@ -33,7 +33,7 @@ const VIDEO_EXTENSIONS = new Set([
   ".mxf",
 ]);
 
-const AUDIO_EXTENSIONS = new Set([
+export const AUDIO_EXTENSIONS: ReadonlySet<string> = new Set([
   ".mp3",
   ".wav",
   ".flac",
@@ -46,7 +46,7 @@ const AUDIO_EXTENSIONS = new Set([
   ".aif",
 ]);
 
-const RASTER_IMAGE_EXTENSIONS = new Set([
+export const RASTER_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([
   ".jpg",
   ".jpeg",
   ".png",
@@ -60,7 +60,7 @@ const RASTER_IMAGE_EXTENSIONS = new Set([
   ".avif",
 ]);
 
-const VECTOR_IMAGE_EXTENSIONS = new Set([".svg"]);
+export const VECTOR_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([".svg"]);
 
 /** Extract the lowercase file extension from a filename. */
 export function fileExtensionLower(name: string): string {
@@ -70,34 +70,21 @@ export function fileExtensionLower(name: string): string {
 
 /** Whether this file may be uploaded at all (folder drops may include junk). */
 export function isSupportedMediaUpload(file: { name: string; type?: string | null }): boolean {
-  const ext = fileExtensionLower(file.name);
   const mime = (file.type ?? "").toLowerCase();
 
   if (mime.startsWith("video/")) return true;
   if (mime.startsWith("audio/")) return true;
   if (mime.startsWith("image/")) return true;
+  if (mime !== "" && mime !== "application/octet-stream") return false;
 
-  if (
+  const ext = fileExtensionLower(file.name);
+  return (
     VIDEO_EXTENSIONS.has(ext) ||
     AUDIO_EXTENSIONS.has(ext) ||
     RASTER_IMAGE_EXTENSIONS.has(ext) ||
     VECTOR_IMAGE_EXTENSIONS.has(ext) ||
     RAW_EXTENSIONS.has(ext)
-  ) {
-    return true;
-  }
-
-  if (mime === "application/octet-stream") {
-    return (
-      VIDEO_EXTENSIONS.has(ext) ||
-      AUDIO_EXTENSIONS.has(ext) ||
-      RASTER_IMAGE_EXTENSIONS.has(ext) ||
-      VECTOR_IMAGE_EXTENSIONS.has(ext) ||
-      RAW_EXTENSIONS.has(ext)
-    );
-  }
-
-  return false;
+  );
 }
 
 /** Upload as original bytes (no JPEG transcode). */
@@ -130,11 +117,11 @@ export function shouldUploadWithoutTranscode(file: {
 
 /** Raster / RAW images that should become JPEG before upload. */
 export function shouldCompressToJpeg(file: { name: string; type?: string | null }): boolean {
-  if (shouldUploadWithoutTranscode(file)) return false;
-
   const ext = fileExtensionLower(file.name);
   const mime = (file.type ?? "").toLowerCase();
 
+  if (mime.startsWith("video/") || mime.startsWith("audio/")) return false;
+  if (VIDEO_EXTENSIONS.has(ext) || AUDIO_EXTENSIONS.has(ext)) return false;
   if (mime === "image/svg+xml" || VECTOR_IMAGE_EXTENSIONS.has(ext)) return false;
   if (mime.startsWith("image/")) return true;
   if (RAW_EXTENSIONS.has(ext)) return true;
@@ -146,4 +133,18 @@ export function shouldCompressToJpeg(file: { name: string; type?: string | null 
 /** Whether the file is a camera RAW image (by extension). */
 export function isCameraRawImage(file: { name: string; type?: string | null }): boolean {
   return RAW_EXTENSIONS.has(fileExtensionLower(file.name));
+}
+
+/** Whether the file is HEIC/HEIF (by extension or MIME). */
+export function isHeicLike(file: { name: string; type?: string | null }): boolean {
+  const ext = fileExtensionLower(file.name);
+  const mime = (file.type ?? "").toLowerCase();
+  return ext === ".heic" || ext === ".heif" || mime === "image/heic" || mime === "image/heif";
+}
+
+/** Whether the file is TIFF (by extension or MIME). */
+export function isTiffLike(file: { name: string; type?: string | null }): boolean {
+  const ext = fileExtensionLower(file.name);
+  const mime = (file.type ?? "").toLowerCase();
+  return ext === ".tif" || ext === ".tiff" || mime === "image/tiff";
 }

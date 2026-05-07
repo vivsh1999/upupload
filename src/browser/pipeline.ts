@@ -1,125 +1,20 @@
-import type {
-  PipelineDefinition,
-  PipelineInfoMessage,
-  PipelineResult,
-  PipelineSource,
-} from "../core";
+import type { PipelineContext, PipelineDefinition, PipelineResult, PipelineSource } from "../core";
 import { runPipeline } from "../core";
+import type { PipelineStage } from "../core/types";
 import {
+  AUDIO_EXTENSIONS,
   fileExtensionLower,
-  isAudioLike,
-  isCameraRawImage,
-  isSupportedMediaUpload,
-  isVideoLike,
-  shouldCompressToJpeg,
+  RAW_EXTENSIONS,
+  VIDEO_EXTENSIONS,
 } from "./allowlist";
-import {
-  isHeicLike,
-  isTiffLike,
-  tryDecodeHeicToJpegFile,
-  tryDecodeTiffToJpegFile,
-} from "./optionalDecoders";
-import { decodeCameraRawToJpegFile, preloadRawDecoder } from "./rawDecode";
+import { DEFAULT_BROWSER_PIPELINE_OPTIONS, info, stem } from "./pipeline-utils";
+import type { DefaultBrowserPipelineOptions } from "./pipeline-utils";
+import type { FileClassification, ProcessingPlugin } from "../plugin/types";
 
-type ImageCompressionFn = typeof import("browser-image-compression").default;
+export type { DefaultBrowserPipelineOptions } from "./pipeline-utils";
+export { DEFAULT_BROWSER_PIPELINE_OPTIONS, toJpegName, toThumbName } from "./pipeline-utils";
 
-let imageCompressionModulePromise: Promise<ImageCompressionFn> | null = null;
-
-async function loadImageCompression(): Promise<ImageCompressionFn> {
-  if (!imageCompressionModulePromise) {
-    imageCompressionModulePromise = import("browser-image-compression").then((mod) => mod.default);
-  }
-  return imageCompressionModulePromise;
-}
-
-/** Warm up the lazy-loaded `browser-image-compression` module. */
-export function preloadImageCompression() {
-  void loadImageCompression();
-}
-
-/** The three artifact variants produced by the default browser pipeline. */
 export type DefaultBrowserPipelineVariant = "original" | "optimized" | "thumbnail";
-
-export type DefaultBrowserPipelineOptions = {
-  saveOriginal: boolean;
-  saveOptimized: boolean;
-  saveThumbnails: boolean;
-
-  /** 1–100 */
-  qualityPercent: number;
-  maxLongEdge: "original" | number;
-
-  thumbnailMaxEdge: number;
-  optimizedMaxSizeMB: number;
-  thumbnailMaxSizeMB: number;
-
-  /**
-   * If requested outputs (optimized/thumbnail) cannot be produced in-browser and
-   * no server processor is configured, produce an `original` artifact anyway.
-   *
-   * This is the key “wide support” default: never drop user media just because
-   * a codec isn’t available client-side.
-   */
-  fallbackToOriginal: boolean;
-
-  debug?: boolean;
-};
-
-/** Sensible defaults for the browser pipeline (save optimized + thumbnail, 90 % quality, 4K max). */
-export const DEFAULT_BROWSER_PIPELINE_OPTIONS: DefaultBrowserPipelineOptions = {
-  saveOriginal: false,
-  saveOptimized: true,
-  saveThumbnails: true,
-  qualityPercent: 90,
-  maxLongEdge: 3840,
-  thumbnailMaxEdge: 640,
-  optimizedMaxSizeMB: 1,
-  thumbnailMaxSizeMB: 0.25,
-  fallbackToOriginal: true,
-  debug: false,
-};
-
-/** Pre-heat decoders and compressors for a set of files before processing. */
-export function preloadBrowserPipelineForFiles(
-  files: Array<{ name: string; type?: string | null }>,
-  opts: Pick<DefaultBrowserPipelineOptions, "saveOptimized" | "saveThumbnails">,
-) {
-  if (!opts.saveOptimized && !opts.saveThumbnails) return;
-  let shouldWarmImageCompression = false;
-  let shouldWarmRawDecoder = false;
-
-  for (const file of files) {
-    if (isCameraRawImage(file)) {
-      shouldWarmRawDecoder = true;
-    }
-    if (shouldCompressToJpeg(file) || isCameraRawImage(file)) {
-      shouldWarmImageCompression = true;
-    }
-    if (shouldWarmImageCompression && shouldWarmRawDecoder) break;
-  }
-
-  if (shouldWarmImageCompression) preloadImageCompression();
-  if (shouldWarmRawDecoder) preloadRawDecoder();
-}
-
-function stem(name: string) {
-  const i = name.lastIndexOf(".");
-  return i >= 0 ? name.slice(0, i) : name;
-}
-
-/** Replace the extension of a filename with `.jpg`. */
-export function toJpegName(originalName: string): string {
-  return `${stem(originalName)}.jpg`;
-}
-
-/** Replace the extension with `.thumb.jpg` for thumbnail outputs. */
-export function toThumbName(originalName: string): string {
-  return `${stem(originalName)}.thumb.jpg`;
-}
-
-function maxWidthOrHeightForPreset(preset: DefaultBrowserPipelineOptions["maxLongEdge"]) {
-  return preset === "original" ? undefined : preset;
-}
 
 async function videoPosterFile(source: File, maxEdge: number): Promise<File | null> {
   const url = URL.createObjectURL(source);
@@ -163,26 +58,70 @@ async function videoPosterFile(source: File, maxEdge: number): Promise<File | nu
   }
 }
 
-function info(
-  level: PipelineInfoMessage["level"],
-  message: string,
-  code?: string,
-): PipelineInfoMessage {
-  return { level, message, code };
+export function preloadBrowserPipelineForFiles(
+  files: Array<{ name: string; type?: string | null }>,
+  opts: Pick<DefaultBrowserPipelineOptions, "saveOptimized" | "saveThumbnails">,
+  extra?: { plugins?: ProcessingPlugin[] },
+) {
+  if (!opts.saveOptimized && !opts.saveThumbnails) return;
+  const plugins = extra?.plugins ?? [];
+  const triggered = new Set<string>();
+  for (const file of files) {
+    for (const plugin of plugins) {
+      if (!triggered.has(plugin.id) && plugin.supports(file) && plugin.preload) {
+        triggered.add(plugin.id);
+        plugin.preload();
+      }
+    }
+  }
 }
 
-/** Run the standard browser-side upload pipeline for a single source. */
 export async function runDefaultBrowserPipeline(
   input: PipelineSource,
   opts: DefaultBrowserPipelineOptions,
+  extra?: { plugins?: ProcessingPlugin[]; signal?: AbortSignal },
 ): Promise<PipelineResult> {
+  const plugins = extra?.plugins ?? [];
+  const signal = extra?.signal;
+
   const log = (level: "debug" | "info" | "warn" | "error", message: string, extra?: unknown) => {
     if (!opts.debug) return;
     const prefix = `[@vivsh1999/upupload] ${input.name}`;
-    // eslint-disable-next-line no-console
     const fn = console[level] ?? console.log;
     fn(prefix, message, extra ?? "");
   };
+
+  const ext = fileExtensionLower(input.name);
+  const mime = (input.type ?? "").toLowerCase();
+  const stemName = stem(input.name);
+  const isVideo = mime.startsWith("video/") || VIDEO_EXTENSIONS.has(ext);
+  const isAudio = mime.startsWith("audio/") || AUDIO_EXTENSIONS.has(ext);
+  const isSvg = mime === "image/svg+xml" || ext === ".svg";
+  const size = input.file.size;
+  const lastModified = input.file instanceof File ? input.file.lastModified : Date.now();
+
+  const classif: FileClassification = {
+    ext,
+    mime,
+    stemName,
+    isVideo,
+    isAudio,
+    isSvg,
+    size,
+    lastModified,
+  };
+
+  const ctx: PipelineContext = { log, shared: new Map(), signal };
+
+  const pluginStages: PipelineStage<PipelineSource, PipelineResult>[] = [];
+  for (const plugin of plugins) {
+    if (plugin.supports(input)) {
+      const stages = plugin.createStages(input, opts as Record<string, unknown>, classif, ctx);
+      for (let i = 0; i < stages.length; i++) {
+        pluginStages.push(stages[i]!);
+      }
+    }
+  }
 
   const def: PipelineDefinition<PipelineSource, PipelineResult> = {
     stages: [
@@ -190,8 +129,20 @@ export async function runDefaultBrowserPipeline(
         id: "validate-allowlist",
         when: () => ({ run: true }),
         run: () => {
-          if (!isSupportedMediaUpload({ name: input.name, type: input.type })) {
-            log("warn", "Rejected (not in allowlist).", { name: input.name, type: input.type });
+          if (mime.startsWith("video/") || mime.startsWith("audio/") || mime.startsWith("image/")) {
+            // fast MIME path
+          } else if (
+            VIDEO_EXTENSIONS.has(ext) ||
+            AUDIO_EXTENSIONS.has(ext) ||
+            RAW_EXTENSIONS.has(ext) ||
+            ext === ".svg"
+          ) {
+            // extension match
+          } else if (mime !== "application/octet-stream") {
+            log("warn", "Rejected (not in allowlist).", {
+              name: input.name,
+              type: input.type,
+            });
             return { artifacts: [], info: [], removeFromQueue: true };
           }
           if (!opts.saveOriginal && !opts.saveOptimized && !opts.saveThumbnails) {
@@ -238,9 +189,7 @@ export async function runDefaultBrowserPipeline(
 
       {
         id: "video-poster-thumbnail",
-        when: () => ({
-          run: opts.saveThumbnails && isVideoLike({ name: input.name, type: input.type }),
-        }),
+        when: () => ({ run: opts.saveThumbnails && isVideo }),
         run: async () => {
           const poster = await videoPosterFile(input.file as File, opts.thumbnailMaxEdge);
           if (!poster) {
@@ -272,334 +221,15 @@ export async function runDefaultBrowserPipeline(
         },
       },
 
-      {
-        id: "svg-guard",
-        when: () => ({ run: true }),
-        run: () => {
-          const ext = fileExtensionLower(input.name);
-          const isSvg = input.type === "image/svg+xml" || ext === ".svg";
-          if (!isSvg) return { artifacts: [], info: [], removeFromQueue: false };
-
-          // SVG cannot be raster-compressed here; keep original only.
-          if (
-            !opts.saveOriginal &&
-            (opts.saveOptimized || opts.saveThumbnails) &&
-            opts.fallbackToOriginal
-          ) {
-            return {
-              artifacts: [
-                {
-                  variant: "original",
-                  file: input.file,
-                  filename: input.name,
-                  filetype: input.type || "application/octet-stream",
-                  relativePath: input.relativePath,
-                },
-              ],
-              info: [
-                info(
-                  "info",
-                  `SVG "${input.name}" uploaded as original (no client-side raster optimize).`,
-                  "svg_original",
-                ),
-              ],
-              removeFromQueue: false,
-            };
-          }
-
-          return { artifacts: [], info: [], removeFromQueue: false };
-        },
-      },
-
-      {
-        id: "optimized-jpeg",
-        when: () => {
-          const isVideo = isVideoLike({ name: input.name, type: input.type });
-          const isAudio = isAudioLike({ name: input.name, type: input.type });
-          const ext = fileExtensionLower(input.name);
-          const isSvg = input.type === "image/svg+xml" || ext === ".svg";
-          return {
-            run: opts.saveOptimized && !isVideo && !isAudio && !isSvg,
-          };
-        },
-        run: async () => {
-          const q = Math.min(100, Math.max(1, opts.qualityPercent)) / 100;
-          const maxWH = maxWidthOrHeightForPreset(opts.maxLongEdge);
-          const rawImage = isCameraRawImage({ name: input.name, type: input.type });
-          const heicLike = isHeicLike({ name: input.name, type: input.type });
-          const tiffLike = isTiffLike({ name: input.name, type: input.type });
-
-          let rasterSource: File = input.file as File;
-          if (rawImage) {
-            const decoded = await decodeCameraRawToJpegFile(input.file as File, {
-              outFilename: `${stem(input.name)}.raw.jpg`,
-              outputQuality: 0.98,
-              debug: Boolean(opts.debug),
-            });
-            if (decoded) {
-              rasterSource = decoded;
-            } else {
-              if (opts.fallbackToOriginal) {
-                return {
-                  artifacts: [
-                    {
-                      variant: "original",
-                      file: input.file,
-                      filename: input.name,
-                      filetype: input.type || "application/octet-stream",
-                      relativePath: input.relativePath,
-                    },
-                  ],
-                  info: [
-                    info(
-                      "warn",
-                      `"${input.name}" could not be decoded in-browser (RAW). Uploading original instead.`,
-                      "raw_decode_failed",
-                    ),
-                  ],
-                  removeFromQueue: false,
-                };
-              }
-              return {
-                artifacts: [],
-                info: [info("warn", `RAW decode failed for "${input.name}".`, "raw_decode_failed")],
-                removeFromQueue: false,
-              };
-            }
-          } else if (heicLike) {
-            const decoded = await tryDecodeHeicToJpegFile(input.file as File);
-            if (decoded) {
-              rasterSource = decoded;
-            } else if (opts.fallbackToOriginal) {
-              return {
-                artifacts: [
-                  {
-                    variant: "original",
-                    file: input.file,
-                    filename: input.name,
-                    filetype: input.type || "application/octet-stream",
-                    relativePath: input.relativePath,
-                  },
-                ],
-                info: [
-                  info(
-                    "warn",
-                    `"${input.name}" could not be decoded in-browser (HEIC/HEIF). Uploading original instead.`,
-                    "heic_decode_missing_or_failed",
-                  ),
-                ],
-                removeFromQueue: false,
-              };
-            } else {
-              return {
-                artifacts: [],
-                info: [
-                  info(
-                    "warn",
-                    `HEIC/HEIF decode unavailable for "${input.name}".`,
-                    "heic_decode_missing_or_failed",
-                  ),
-                ],
-                removeFromQueue: false,
-              };
-            }
-          } else if (tiffLike) {
-            const decoded = await tryDecodeTiffToJpegFile(input.file as File);
-            if (decoded) {
-              rasterSource = decoded;
-            } else if (opts.fallbackToOriginal) {
-              return {
-                artifacts: [
-                  {
-                    variant: "original",
-                    file: input.file,
-                    filename: input.name,
-                    filetype: input.type || "application/octet-stream",
-                    relativePath: input.relativePath,
-                  },
-                ],
-                info: [
-                  info(
-                    "warn",
-                    `"${input.name}" could not be decoded in-browser (TIFF). Uploading original instead.`,
-                    "tiff_decode_missing_or_failed",
-                  ),
-                ],
-                removeFromQueue: false,
-              };
-            } else {
-              return {
-                artifacts: [],
-                info: [
-                  info(
-                    "warn",
-                    `TIFF decode unavailable for "${input.name}".`,
-                    "tiff_decode_missing_or_failed",
-                  ),
-                ],
-                removeFromQueue: false,
-              };
-            }
-          } else if (!shouldCompressToJpeg({ name: input.name, type: input.type })) {
-            return { artifacts: [], info: [], removeFromQueue: false };
-          }
-
-          const imageCompression = await loadImageCompression();
-          try {
-            const compressed = await imageCompression(rasterSource, {
-              maxSizeMB: opts.optimizedMaxSizeMB,
-              maxWidthOrHeight: maxWH ?? 16384,
-              useWebWorker: true,
-              maxIteration: 12,
-              fileType: "image/jpeg",
-              initialQuality: q,
-            });
-            const jpegName = toJpegName(input.name);
-            const jpegFile = new File([compressed], jpegName, {
-              type: "image/jpeg",
-              lastModified: Date.now(),
-            });
-            return {
-              artifacts: [
-                {
-                  variant: "optimized",
-                  file: jpegFile,
-                  filename: jpegFile.name,
-                  filetype: jpegFile.type,
-                  relativePath: input.relativePath,
-                },
-              ],
-              info: [],
-              removeFromQueue: false,
-            };
-          } catch (err) {
-            log("warn", "JPEG optimize failed.", err);
-            if (opts.fallbackToOriginal) {
-              return {
-                artifacts: [
-                  {
-                    variant: "original",
-                    file: input.file,
-                    filename: input.name,
-                    filetype: input.type || "application/octet-stream",
-                    relativePath: input.relativePath,
-                  },
-                ],
-                info: [
-                  info(
-                    "warn",
-                    `Could not optimize "${input.name}" in this browser. Uploading original.`,
-                    "optimize_failed",
-                  ),
-                ],
-                removeFromQueue: false,
-              };
-            }
-            return {
-              artifacts: [],
-              info: [
-                info(
-                  "warn",
-                  `Could not optimize "${input.name}" in this browser.`,
-                  "optimize_failed",
-                ),
-              ],
-              removeFromQueue: false,
-            };
-          }
-        },
-      },
-
-      {
-        id: "thumbnail-jpeg",
-        when: () => {
-          const isVideo = isVideoLike({ name: input.name, type: input.type });
-          const isAudio = isAudioLike({ name: input.name, type: input.type });
-          const ext = fileExtensionLower(input.name);
-          const isSvg = input.type === "image/svg+xml" || ext === ".svg";
-          return {
-            run: opts.saveThumbnails && !isVideo && !isAudio && !isSvg,
-          };
-        },
-        run: async () => {
-          const rawImage = isCameraRawImage({ name: input.name, type: input.type });
-          const heicLike = isHeicLike({ name: input.name, type: input.type });
-          const tiffLike = isTiffLike({ name: input.name, type: input.type });
-
-          let rasterSource: File = input.file as File;
-          if (rawImage) {
-            const decoded = await decodeCameraRawToJpegFile(input.file as File, {
-              outFilename: `${stem(input.name)}.raw.jpg`,
-              outputQuality: 0.98,
-              debug: Boolean(opts.debug),
-            });
-            if (decoded) {
-              rasterSource = decoded;
-            } else {
-              return { artifacts: [], info: [], removeFromQueue: false };
-            }
-          } else if (heicLike) {
-            const decoded = await tryDecodeHeicToJpegFile(input.file as File);
-            if (decoded) rasterSource = decoded;
-            else return { artifacts: [], info: [], removeFromQueue: false };
-          } else if (tiffLike) {
-            const decoded = await tryDecodeTiffToJpegFile(input.file as File);
-            if (decoded) rasterSource = decoded;
-            else return { artifacts: [], info: [], removeFromQueue: false };
-          } else if (!shouldCompressToJpeg({ name: input.name, type: input.type })) {
-            return { artifacts: [], info: [], removeFromQueue: false };
-          }
-
-          const imageCompression = await loadImageCompression();
-          try {
-            const thumb = await imageCompression(rasterSource, {
-              maxSizeMB: opts.thumbnailMaxSizeMB,
-              maxWidthOrHeight: opts.thumbnailMaxEdge,
-              useWebWorker: true,
-              maxIteration: 10,
-              fileType: "image/jpeg",
-              initialQuality: 0.78,
-            });
-            const thumbName = toThumbName(input.name);
-            const thumbFile = new File([thumb], thumbName, {
-              type: "image/jpeg",
-              lastModified: Date.now(),
-            });
-            return {
-              artifacts: [
-                {
-                  variant: "thumbnail",
-                  file: thumbFile,
-                  filename: thumbFile.name,
-                  filetype: thumbFile.type,
-                  relativePath: input.relativePath,
-                },
-              ],
-              info: [],
-              removeFromQueue: false,
-            };
-          } catch (err) {
-            log("warn", "Thumbnail generation failed (ignored).", err);
-            return { artifacts: [], info: [], removeFromQueue: false };
-          }
-        },
-      },
+      ...pluginStages,
 
       {
         id: "final-fallback-to-original",
-        when: () => ({ run: opts.fallbackToOriginal && !opts.saveOriginal }),
+        when: () => ({
+          run: opts.fallbackToOriginal && !opts.saveOriginal,
+        }),
         run: () => {
-          // If user didn’t request original explicitly but no artifacts were produced,
-          // keep the upload by emitting original bytes.
-          // NOTE: because stages merge results, we can’t see “final count” here;
-          // this stage acts as a safe default for non-transcodable media types.
-          const ext = fileExtensionLower(input.name);
-          const isSvg = input.type === "image/svg+xml" || ext === ".svg";
-          const noTranscode =
-            isVideoLike({ name: input.name, type: input.type }) ||
-            isAudioLike({ name: input.name, type: input.type }) ||
-            isSvg;
-
+          const noTranscode = isVideo || isAudio || isSvg;
           if (!noTranscode) return { artifacts: [], info: [], removeFromQueue: false };
           return {
             artifacts: [
@@ -619,9 +249,8 @@ export async function runDefaultBrowserPipeline(
     ],
   };
 
-  const out = await runPipeline(input, def, { logger: log });
+  const out = await runPipeline(input, def, { logger: log, signal });
 
-  // Global fallback: if nothing produced, optionally keep original.
   if (out.artifacts.length === 0 && opts.fallbackToOriginal) {
     out.artifacts.push({
       variant: "original",

@@ -1,4 +1,3 @@
-import { fileExtensionLower } from "./allowlist";
 import { blobToArrayBuffer, jpegFileFromImageData } from "./rasterize";
 
 async function optionalImport<TModule = unknown>(moduleName: string): Promise<TModule | null> {
@@ -9,29 +8,7 @@ async function optionalImport<TModule = unknown>(moduleName: string): Promise<TM
   }
 }
 
-/** Whether the file is HEIC/HEIF (by extension or MIME). */
-export function isHeicLike(file: { name: string; type?: string | null }): boolean {
-  const ext = fileExtensionLower(file.name);
-  const mime = (file.type ?? "").toLowerCase();
-  return ext === ".heic" || ext === ".heif" || mime === "image/heic" || mime === "image/heif";
-}
-
-/** Whether the file is TIFF (by extension or MIME). */
-export function isTiffLike(file: { name: string; type?: string | null }): boolean {
-  const ext = fileExtensionLower(file.name);
-  const mime = (file.type ?? "").toLowerCase();
-  return ext === ".tif" || ext === ".tiff" || mime === "image/tiff";
-}
-
-/**
- * Try to decode HEIC/HEIF into a browser-decodable JPEG File.
- *
- * Uses optional dependencies if present:
- * - `heic-decode` (libheif-js) → ImageData → canvas → jpeg
- * - fallback: `heic2any` → jpeg blob
- */
 export async function tryDecodeHeicToJpegFile(source: File): Promise<File | null> {
-  // First: heic-decode (small, returns raw pixels)
   try {
     const mod = await optionalImport<{ default: unknown }>("heic-decode");
     if (!mod) throw new Error("missing");
@@ -45,16 +22,11 @@ export async function tryDecodeHeicToJpegFile(source: File): Promise<File | null
     const out = await jpegFileFromImageData(
       img,
       `${source.name.replace(/\.(heic|heif)$/i, "")}.jpg`,
-      {
-        quality: 0.92,
-      },
+      { quality: 0.92 },
     );
     if (out) return out;
-  } catch {
-    // optional dependency missing or decode failed
-  }
+  } catch {}
 
-  // Second: heic2any (large bundle, but works in many setups)
   try {
     const mod = await optionalImport<{ default: unknown }>("heic2any");
     if (!mod) throw new Error("missing");
@@ -75,9 +47,6 @@ export async function tryDecodeHeicToJpegFile(source: File): Promise<File | null
   }
 }
 
-/**
- * Try to decode TIFF into a browser-decodable JPEG File using optional `utif`.
- */
 export async function tryDecodeTiffToJpegFile(source: File): Promise<File | null> {
   try {
     const UTIF = await optionalImport<any>("utif");
@@ -97,9 +66,7 @@ export async function tryDecodeTiffToJpegFile(source: File): Promise<File | null
     const out = await jpegFileFromImageData(
       { data, width, height },
       `${source.name.replace(/\.(tif|tiff)$/i, "")}.jpg`,
-      {
-        quality: 0.92,
-      },
+      { quality: 0.92 },
     );
     return out;
   } catch {

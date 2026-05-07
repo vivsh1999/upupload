@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@vivsh1999/upupload — custom pipeline</title>
+    <style>
+      :root {
+        font-family: system-ui, sans-serif;
+        line-height: 1.45;
+        max-width: 48rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      h2 {
+        margin-top: 2rem;
+      }
+      label {
+        display: block;
+        margin: 0.75rem 0 0.25rem;
+      }
+      button {
+        margin-top: 1rem;
+        padding: 0.5rem 1rem;
+        cursor: pointer;
+      }
+      pre {
+        background: #f4f4f5;
+        border-radius: 8px;
+        padding: 1rem;
+        font-size: 0.8125rem;
+        overflow-x: auto;
+      }
+      #log {
+        white-space: pre-wrap;
+      }
+      .note {
+        border-left: 3px solid #6366f1;
+        background: #eef2ff;
+        padding: 0.75rem 1rem;
+        border-radius: 6px;
+        font-size: 0.875rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Custom Pipeline</h1>
+    <p class="note">
+      Three plugins composed together: <code>createRawToJpegPlugin()</code> handles RAW/HEIC/TIFF,
+      <code>createJpegCompressorPlugin()</code> handles JPEG/PNG/WebP, and a custom
+      <code>metadata-annotator</code> reads image dimensions. Each plugin only runs when
+      <code>supports()</code> matches. Pipeline options customised — 80% quality, 2560px max, 320px
+      thumbnails.
+    </p>
+
+    <h2>1. Pick an image</h2>
+    <input id="file" type="file" accept="image/*" />
+
+    <h2>2. Pipeline config</h2>
+    <pre id="config"></pre>
+
+    <h2>3. Run</h2>
+    <button type="button" id="process">Run custom pipeline</button>
+
+    <h2>4. Results</h2>
+    <pre id="log" aria-live="polite">(waiting…)</pre>
+
+    <hr />
+    <p><a href="/">← Back to basic example</a></p>
+
+    <script type="module" src="/custom-pipeline.js"></script>
+  </body>
+</html>

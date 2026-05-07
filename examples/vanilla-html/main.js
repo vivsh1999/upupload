@@ -3,6 +3,8 @@ import {
   runDefaultBrowserPipeline,
   uploadArtifactWithTus,
 } from "@vivsh1999/upupload/browser";
+import { createJpegCompressorPlugin } from "@vivsh1999/upupload/plugins/jpeg-compressor";
+import { createRawToJpegPlugin } from "@vivsh1999/upupload/plugins/raw-to-jpeg";
 
 const CHUNK = 5 * 1024 * 1024;
 
@@ -47,8 +49,10 @@ async function runPipelineForSelectedFile() {
     type: file.type || "application/octet-stream",
   };
 
-  log("Running pipeline…");
-  const result = await runDefaultBrowserPipeline(source, opts);
+  log("Running pipeline (raw-to-jpeg + jpeg-compressor)…");
+  const result = await runDefaultBrowserPipeline(source, opts, {
+    plugins: [createRawToJpegPlugin(), createJpegCompressorPlugin()],
+  });
 
   for (const m of result.info) {
     log(`[${m.level}] ${m.message}`);

@@ -119,3 +119,153 @@ Requirements:
 
 - Authenticated at https://jsr.io (run `npx jsr auth` or use `JSR_TOKEN` env var)
 - Version bump as needed before publish
+
+# Architecture & API
+
+## Pipeline Engine (`src/core/`)
+
+The generic pipeline engine (`runPipeline`) executes ordered stages with:
+
+- **Shared context bag** (`ctx.shared: Map<string, unknown>`) — stages/plugins communicate by reading/writing shared keys
+- **AbortSignal support** — pipelines and uploads can be cancelled mid-flight
+- **Stage middleware** — `PipelineDefinition.middleware` transforms every stage (timing, monitoring, etc.)
+- **Progress events** — `PipelineOptions.onProgress` fires `start`/`end` per stage
+- **Retry on error** — error handler supports `{ action: "retry"; maxRetries; delayMs? }`
+- **Accumulated result in `when()`** — stage guards receive the current accumulated `PipelineResult`
+
+### Utilities
+
+```ts
+compose(...defs); // Merge multiple pipeline definitions
+stage(s); // Wrap a single stage as a definition
+createTimingMiddleware(); // Log stage duration to ctx.log
+```
+
+## Plugin System (`src/plugin/`)
+
+```ts
+interface ProcessingPlugin<TOpts = Record<string, unknown>> {
+  readonly id: string;
+  readonly name: string;
+  supports(file: { name: string; type?: string | null }): boolean;
+  createStages(
+    input: PipelineSource,
+    opts: TOpts, // Typed options — no more cast
+    classif: FileClassification,
+    ctx: PipelineContext, // Logger + shared bag + signal
+  ): PipelineStage<PipelineSource, PipelineResult>[];
+  preload?(): void;
+}
+```
+
+`FileClassification` now includes `size`, `lastModified`, and optional `meta` bag.
+
+### Plugin Factory Pattern
+
+```ts
+function createMyPlugin(): ProcessingPlugin<DefaultBrowserPipelineOptions> {
+  return {
+    id: "my-plugin",
+    name: "My Plugin",
+    supports(file) { /* return true/false */ },
+    createStages(input, opts, classif, ctx) {
+      // opts is DefaultBrowserPipelineOptions — fully typed, no cast
+      // ctx.shared: Map<string, unknown> — inter-plugin communication
+      // ctx.log(level, message, extra?) — structured logging
+      // ctx.signal?: AbortSignal — cancellation support
+      return [{ id: "my-stage", when: () => ({ run: true }), run: async () => { ... } }];
+    },
+  };
+}
+```
+
+### Built-in Plugins
+
+| Factory                        | File type            | Import path                                   |
+| ------------------------------ | -------------------- | --------------------------------------------- |
+| `createRawToJpegPlugin()`      | RAW/HEIC/TIFF → JPEG | `@vivsh1999/upupload/plugins/raw-to-jpeg`     |
+| `createJpegCompressorPlugin()` | JPEG/PNG/WebP → JPEG | `@vivsh1999/upupload/plugins/jpeg-compressor` |
+
+Both return `ProcessingPlugin<DefaultBrowserPipelineOptions>` — the `opts` parameter is fully typed.
+
+### Writing a Custom Plugin
+
+```ts
+const myPlugin: ProcessingPlugin<MyOpts> = {
+  id: "my-plugin",
+  name: "My Plugin",
+  supports(file) { /* return true/false */ },
+  createStages(input, opts, classif, ctx) {
+    // opts is typed as MyOpts
+    // ctx.shared lets you read/write inter-plugin state
+    // ctx.log for structured logging
+    return [{ id: "my-stage", when: () => ({ run: true }), run: async () => { ... } }];
+  },
+};
+```
+
+## React Hook (`src/react/`)
+
+```ts
+function useMediaUpload<TMeta = void>(
+  options?: UseMediaUploadOptions<TMeta>,
+): UseMediaUploadResult<TMeta>;
+```
+
+Key features:
+
+- **Generic over metadata** — `queue` items include `meta?: TMeta` from `getMeta: (file) => TMeta`
+- **`file: File` on every queue item** — no more DOM queries
+- **`cancelUpload(fileId)` / `cancelAll()`** — aborts in-flight pipelines and uploads
+- **`isDragOver` state** — composable drag-and-drop with enter/leave counter
+- **`tuning.simultaneousUploads`** — concurrency-limited via `Semaphore`
+- **Preview URLs** — `previewUrl` and per-artifact `url` on queue items (auto-released)
+- **`startUpload(fileIds?)`** — selective processing of specific items
+- **No `xhr` transport** dead path — only `"tus"` and `"custom"`
+- **`onWarning` wired** — error messages in queue trigger the callback
+
+## Semaphore Utility
+
+```ts
+import { Semaphore } from "@vivsh1999/upupload/react"; // internal, re-exported
+
+const sem = new Semaphore(4); // max 4 concurrent
+await sem.run(() => fetch(...));
+```
+
+It is also used internally by `useMediaUpload` with `tuning.simultaneousUploads`.
+
+## File Locations
+
+### Core
+
+- `src/core/types.ts` — All pipeline types
+- `src/core/runPipeline.ts` — Generic engine
+- `src/core/utils.ts` — `compose`, `stage`, `createTimingMiddleware`
+- `src/core/index.ts` — Barrel
+
+### Plugin
+
+- `src/plugin/types.ts` — `ProcessingPlugin<TOpts>`, `FileClassification`
+- `src/plugin/raw-to-jpeg.ts` — RAW/HEIC/TIFF decoder plugin
+- `src/plugin/jpeg-compressor.ts` — JPEG/PNG/WebP compressor plugin
+- `src/plugin/index.ts` — Barrel
+
+### Browser
+
+- `src/browser/pipeline.ts` — Default browser pipeline + `preloadBrowserPipelineForFiles`
+- `src/browser/pipeline-utils.ts` — Options, filename helpers
+- `src/browser/allowlist.ts` — Extension/MIME classifiers
+- `src/browser/tusUpload.ts` — TUS upload client
+- `src/browser/rawDecode.ts` — LibRaw WASM decoder
+- `src/browser/optionalDecoders.ts` — HEIC/TIFF runtime imports
+- `src/browser/rasterize.ts` — Canvas JPEG conversion
+
+### React
+
+- `src/react/index.ts` — `useMediaUpload` hook
+- `src/react/utils.ts` — `Semaphore` utility
+
+### Server
+
+- `src/server/types.ts` — `ServerProcessor` interface

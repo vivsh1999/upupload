@@ -28,10 +28,25 @@
       "import": "./dist/core/index.mjs",
       "default": "./dist/core/index.mjs"
     },
+    "./plugins": {
+      "types": "./dist/plugin/index.d.mts",
+      "import": "./dist/plugin/index.mjs",
+      "default": "./dist/plugin/index.mjs"
+    },
+    "./plugins/jpeg-compressor": {
+      "types": "./dist/plugin/jpeg-compressor.d.mts",
+      "import": "./dist/plugin/jpeg-compressor.mjs",
+      "default": "./dist/plugin/jpeg-compressor.mjs"
+    },
+    "./plugins/raw-to-jpeg": {
+      "types": "./dist/plugin/raw-to-jpeg.d.mts",
+      "import": "./dist/plugin/raw-to-jpeg.mjs",
+      "default": "./dist/plugin/raw-to-jpeg.mjs"
+    },
     "./react": {
-      "types": "./src/react/index.ts",
-      "import": "./src/react/index.ts",
-      "default": "./src/react/index.ts"
+      "types": "./dist/react/index.d.mts",
+      "import": "./dist/react/index.mjs",
+      "default": "./dist/react/index.mjs"
     },
     "./server": {
       "types": "./dist/server/index.d.mts",
@@ -44,8 +59,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vp pack src/index.ts src/core/index.ts src/browser/index.ts src/react/index.ts src/server/index.ts",
-    "dev": "vp pack src/index.ts src/core/index.ts src/browser/index.ts src/react/index.ts src/server/index.ts --watch",
+    "build": "vp pack src/index.ts src/core/index.ts src/browser/index.ts src/plugin/index.ts src/plugin/jpeg-compressor.ts src/plugin/raw-to-jpeg.ts src/react/index.ts src/server/index.ts",
+    "dev": "vp pack src/index.ts src/core/index.ts src/browser/index.ts src/plugin/index.ts src/plugin/jpeg-compressor.ts src/plugin/raw-to-jpeg.ts src/react/index.ts src/server/index.ts --watch",
     "test": "vp test",
     "check": "vp check",
     "prepublishOnly": "vp run build",
@@ -59,8 +74,6 @@
     "preview:vanilla-html": "pnpm --dir examples/vanilla-html preview"
   },
   "dependencies": {
-    "browser-image-compression": "^2.0.2",
-    "libraw-wasm": "^1.1.2",
     "tus-js-client": "^4.3.1"
   },
   "devDependencies": {

@@ -7,6 +7,10 @@
     ".": "./src/index.ts",
     "./browser": "./src/browser/index.ts",
     "./core": "./src/core/index.ts",
+    "./plugins": "./src/plugin/index.ts",
+    "./plugins/jpeg-compressor": "./src/plugin/jpeg-compressor.ts",
+    "./plugins/raw-to-jpeg": "./src/plugin/raw-to-jpeg.ts",
+    "./react": "./src/react/index.ts",
     "./server": "./src/server/index.ts"
   },
   "publish": {

@@ -1,8 +1,3 @@
-/** @module rawDecode
- * Decode camera RAW bytes in the browser via LibRaw (WASM + Web Worker).
- * Output is a high-quality `image/jpeg` `File` suitable for JPEG pipelines.
- */
-
 type LibRawImagePayload = {
   data: Uint8ClampedArray | Uint8Array;
   width: number;
@@ -20,16 +15,17 @@ type LibRawCtor = new () => {
   free?: () => Promise<void> | void;
 };
 
+const LW = "libraw-wasm";
+
 let libRawCtorPromise: Promise<LibRawCtor> | null = null;
 
 function getLibRawCtor() {
   if (!libRawCtorPromise) {
-    libRawCtorPromise = import("libraw-wasm").then((m) => m.default as LibRawCtor);
+    libRawCtorPromise = import(LW).then((m: { default: LibRawCtor }) => m.default);
   }
   return libRawCtorPromise;
 }
 
-/** Warm up the lazy-loaded `libraw-wasm` decoder module. */
 export function preloadRawDecoder() {
   void getLibRawCtor();
 }
@@ -85,17 +81,9 @@ async function rasterFileFromDecodedPixels(
     if (ctx) {
       ctx.putImageData(imageData, 0, 0);
       try {
-        const blob = await canvas.convertToBlob({
-          type: "image/jpeg",
-          quality: q,
-        });
-        return new File([blob], filename, {
-          type: "image/jpeg",
-          lastModified: Date.now(),
-        });
-      } catch {
-        // Fallback to HTMLCanvas path.
-      }
+        const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: q });
+        return new File([blob], filename, { type: "image/jpeg", lastModified: Date.now() });
+      } catch {}
     }
   }
 
@@ -105,14 +93,11 @@ async function rasterFileFromDecodedPixels(
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
   ctx.putImageData(imageData, 0, 0);
-  const blob = await new Promise<Blob | null>((resolve) => {
-    canvas.toBlob((b) => resolve(b), "image/jpeg", q);
-  });
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob((b) => resolve(b), "image/jpeg", q),
+  );
   if (!blob) return null;
-  return new File([blob], filename, {
-    type: "image/jpeg",
-    lastModified: Date.now(),
-  });
+  return new File([blob], filename, { type: "image/jpeg", lastModified: Date.now() });
 }
 
 const defaultLibRawOpenSettings: Record<string, unknown> = {
@@ -124,14 +109,12 @@ const defaultLibRawOpenSettings: Record<string, unknown> = {
   halfSize: false,
 };
 
-/** Decode a camera RAW file into a high-quality JPEG File via LibRaw WASM. */
 export async function decodeCameraRawToJpegFile(
   source: File,
   options: { outFilename: string; outputQuality?: number; debug?: boolean },
 ): Promise<File | null> {
   const log = (message: string, extra?: unknown) => {
     if (!options.debug) return;
-    // eslint-disable-next-line no-console
     console.info("[raw-decode]", message, extra ?? "");
   };
 
@@ -153,13 +136,7 @@ export async function decodeCameraRawToJpegFile(
     }
 
     if (pixels.length < width * height * 3) {
-      log("Pixel buffer smaller than expected for decoded dimensions.", {
-        width,
-        height,
-        length: pixels.length,
-        colors: img.colors,
-        bits: img.bits,
-      });
+      log("Pixel buffer smaller than expected", { width, height, length: pixels.length });
       return null;
     }
 
