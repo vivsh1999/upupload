@@ -7,7 +7,7 @@ import {
   shouldCompressToJpeg,
   shouldUploadWithoutTranscode,
 } from "../browser/allowlist";
-import { isHeicLike, isTiffLike } from "../browser/optionalDecoders";
+import { isHeicLike, isTiffLike } from "../browser/allowlist";
 
 describe("isSupportedMediaUpload", () => {
   const video = { name: "clip.mov", type: "video/quicktime" };

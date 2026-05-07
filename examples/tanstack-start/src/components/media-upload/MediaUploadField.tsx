@@ -17,6 +17,7 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
     renderFileList,
     disabled,
     initialConfig,
+    plugins,
     transport,
     tus,
     uploadHandler,
@@ -36,6 +37,7 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
 
   const media = useMediaUpload({
     initialConfig,
+    plugins,
     transport,
     tus,
     uploadHandler,

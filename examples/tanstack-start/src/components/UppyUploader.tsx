@@ -1,4 +1,6 @@
 import { ClientOnly } from "@tanstack/react-router";
+import { createJpegCompressorPlugin } from "@vivsh1999/upupload/plugins/jpeg-compressor";
+import { createRawToJpegPlugin } from "@vivsh1999/upupload/plugins/raw-to-jpeg";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -26,6 +28,7 @@ export function UppyUploader() {
       <MediaUploadField
         transport="tus"
         tus={{}}
+        plugins={[createRawToJpegPlugin(), createJpegCompressorPlugin()]}
         initialConfig={{
           saveOriginal: false,
           saveOptimized: true,

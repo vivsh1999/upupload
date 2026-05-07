@@ -9,7 +9,9 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@vivsh1999/upupload": "workspace:*"
+    "@vivsh1999/upupload": "workspace:*",
+    "browser-image-compression": "^2.0.2",
+    "libraw-wasm": "^1.1.2"
   },
   "devDependencies": {
     "typescript": "^6.0.2",
