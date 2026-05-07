@@ -14,8 +14,6 @@ Client-first, multi-stage media uploader/processor with a **plugin architecture*
 
 ```sh
 npm add @vivsh1999/upupload
-# or
-pnpm add @vivsh1999/upupload
 ```
 
 The package itself has zero image-processing dependencies on first install.
@@ -35,46 +33,41 @@ npm add heic-decode heic2any utif
 
 ## Entry Points
 
-| Path                                          | Environment | Contents                                      | Bundle cost |
-| --------------------------------------------- | ----------- | --------------------------------------------- | ----------- |
-| `@vivsh1999/upupload`                         | Browser     | Re-exports core + browser                     | —           |
-| `@vivsh1999/upupload/browser`                 | Browser     | Pipeline, allowlist, TUS upload, plugin types | 8 kB        |
-| `@vivsh1999/upupload/core`                    | Universal   | Generic pipeline engine and types (no DOM)    | 1 kB        |
-| `@vivsh1999/upupload/react`                   | Browser     | `useMediaUpload` React hook                   | 60 kB       |
-| `@vivsh1999/upupload/server`                  | Node        | Server entry (minimal)                        | < 1 kB      |
-| `@vivsh1999/upupload/plugins`                 | Browser     | Barrel re-export of all plugins               | N/A         |
-| `@vivsh1999/upupload/plugins/jpeg-compressor` | Browser     | JPEG/PNG/WebP compressor plugin               | +4 kB       |
-| `@vivsh1999/upupload/plugins/raw-to-jpeg`     | Browser     | RAW/HEIC/TIFF decoder plugin                  | +12 kB      |
+| Path                                          | Environment | Contents                                          | Bundle cost |
+| --------------------------------------------- | ----------- | ------------------------------------------------- | ----------- |
+| `@vivsh1999/upupload`                         | Browser     | Re-exports core + browser                         | —           |
+| `@vivsh1999/upupload/browser`                 | Browser     | Pipeline, allowlist, TUS upload, plugin types     | 8 kB        |
+| `@vivsh1999/upupload/core`                    | Universal   | Generic pipeline engine and types (no DOM)        | 1 kB        |
+| `@vivsh1999/upupload/react`                   | Browser     | `useMediaUpload` React hook                       | 60 kB       |
+| `@vivsh1999/upupload/server`                  | Node        | Server entry (minimal)                            | < 1 kB      |
+| `@vivsh1999/upupload/plugins`                 | Browser     | Barrel re-export of all plugins                   | N/A         |
+| `@vivsh1999/upupload/plugins/jpeg-compressor` | Browser     | JPEG/PNG/WebP compressor plugin                   | +4 kB       |
+| `@vivsh1999/upupload/plugins/raw-to-jpeg`     | Browser     | RAW/HEIC/TIFF decoder plugin                      | +12 kB      |
+| `@vivsh1999/upupload/plugins/testing`         | Browser     | Plugin test utilities                             | +1 kB       |
+| `@vivsh1999/upupload/preset`                  | Browser     | Zero-config `upload()` with auto-detected plugins | +13 kB      |
 
 Only the specific plugin path you import is added to your bundle.
 
-## Quick Start (React)
+## Quick Start
+
+### React
 
 ```tsx
 import { useMediaUpload } from "@vivsh1999/upupload/react";
 import { createJpegCompressorPlugin } from "@vivsh1999/upupload/plugins/jpeg-compressor";
 
 function Uploader() {
-  const { getDropTargetProps, getFileInputProps, queue, startUpload, isDragOver, cancelUpload } =
-    useMediaUpload({
-      plugins: [createJpegCompressorPlugin()],
-      transport: "tus",
-      tus: { endpoint: "/api/tus" },
-      // Generic metadata — each file gets an id
-      getMeta: (file) => ({ uploadedAt: Date.now() }),
-    });
-
+  const { getDropTargetProps, queue, startUpload } = useMediaUpload({
+    plugins: [createJpegCompressorPlugin()],
+    transport: "tus",
+    tus: { endpoint: "/api/tus" },
+  });
   return (
-    <div
-      {...getDropTargetProps()}
-      style={{ border: isDragOver ? "2px dashed blue" : "2px dashed gray" }}
-    >
+    <div {...getDropTargetProps()}>
       <input {...getFileInputProps()} />
       {queue.map((item) => (
         <div key={item.id}>
           {item.name} — {item.status} ({item.progress}%)
-          {item.previewUrl && <img src={item.previewUrl} alt="" width={80} />}
-          {item.status === "error" && <button onClick={() => cancelUpload(item.id)}>Cancel</button>}
         </div>
       ))}
       <button onClick={() => startUpload()}>Upload</button>
@@ -83,7 +76,7 @@ function Uploader() {
 }
 ```
 
-## Quick Start (Vanilla JS)
+### Vanilla JS
 
 ```js
 import { runDefaultBrowserPipeline } from "@vivsh1999/upupload/browser";
@@ -94,331 +87,22 @@ const result = await runDefaultBrowserPipeline(source, opts, {
 });
 ```
 
-## Pipeline Engine
-
-Built-in stages run in this order:
-
-| Stage                        | Condition                      | What it does                                     |
-| ---------------------------- | ------------------------------ | ------------------------------------------------ |
-| `validate-allowlist`         | Always                         | Rejects non-media files (exe, txt, etc.)         |
-| `original`                   | `saveOriginal: true`           | Passes source file through as `original` variant |
-| `video-poster-thumbnail`     | `saveThumbnails: true` + video | Extracts a JPEG poster frame as `thumbnail`      |
-| _plugin stages_              | Per plugin `supports()`        | Stages contributed by matched plugins            |
-| `final-fallback-to-original` | `fallbackToOriginal: true`     | Uploads original for video/audio/SVG             |
-
-### Pipeline Features
-
-- **Shared context bag** (`ctx.shared: Map<string, unknown>`) — stages and plugins communicate by reading/writing shared keys
-- **AbortSignal support** — pipelines and uploads can be cancelled mid-flight
-- **Stage middleware** — `PipelineDefinition.middleware` transforms every stage (timing, monitoring, etc.)
-- **Progress events** — `PipelineOptions.onProgress` fires `start`/`end` per stage
-- **Retry on error** — error handler supports `{ action: "retry"; maxRetries; delayMs? }`
-- **Accumulated result in `when()`** — stage guards receive the current accumulated `PipelineResult`
-
-### Pipeline Utilities
+### Preset (zero-config)
 
 ```ts
-import { compose, stage, createTimingMiddleware } from "@vivsh1999/upupload/core";
+import { upload } from "@vivsh1999/upupload/preset";
 
-// Compose multiple definitions into one
-const fullDef = compose(def1, def2);
-
-// Wrap a single stage as a definition
-const def = stage({ id: "my-stage", when: () => ({ run: true }), run: async () => ({ ... }) });
-
-// Timing middleware — logs stage duration
-const timing = createTimingMiddleware((id, ms) => console.log(`${id} took ${ms}ms`));
+const result = await upload(file, { quality: 80 });
 ```
 
-## Plugin Architecture
+## Documentation
 
-### `ProcessingPlugin` Interface
-
-```ts
-interface ProcessingPlugin<TOpts = Record<string, unknown>> {
-  readonly id: string;
-  readonly name: string;
-  supports(file: { name: string; type?: string | null }): boolean;
-  createStages(
-    input: PipelineSource,
-    opts: TOpts, // Typed — no cast needed
-    classif: FileClassification,
-    ctx: PipelineContext, // Logger + shared bag + AbortSignal
-  ): PipelineStage<PipelineSource, PipelineResult>[];
-  preload?(): void;
-}
-```
-
-- `supports()` — quick classifier, determines if this plugin handles a file
-- `createStages()` — returns pipeline stages for a matched file. The `opts` parameter is fully typed via the generic. `ctx.shared` enables inter-stage communication. `ctx.log` provides structured logging. `ctx.signal` enables cancellation.
-- `preload()` — optional, pre-warms decoders/WASM modules. Called at most once per plugin per `preloadBrowserPipelineForFiles` call
-
-### `FileClassification`
-
-```ts
-interface FileClassification {
-  ext: string;
-  mime: string;
-  stemName: string;
-  isVideo: boolean;
-  isAudio: boolean;
-  isSvg: boolean;
-  size: number; // File size in bytes
-  lastModified: number; // Last modified timestamp (ms since epoch)
-  meta?: Record<string, unknown>; // Optional custom metadata bag
-}
-```
-
-### Import Patterns
-
-```ts
-// Barrel — imports both plugins
-import { createJpegCompressorPlugin, createRawToJpegPlugin } from "@vivsh1999/upupload/plugins";
-
-// Individual — only what you use (tree-shaking)
-import { createJpegCompressorPlugin } from "@vivsh1999/upupload/plugins/jpeg-compressor";
-```
-
-### Usage Patterns
-
-```ts
-// No plugins — only built-in stages
-runDefaultBrowserPipeline(source, opts);
-
-// Only JPEG/PNG/WebP compression (no RAW)
-runDefaultBrowserPipeline(source, opts, {
-  plugins: [createJpegCompressorPlugin()],
-});
-
-// With cancellation signal
-const controller = new AbortController();
-runDefaultBrowserPipeline(source, opts, {
-  plugins: [createJpegCompressorPlugin()],
-  signal: controller.signal,
-});
-
-// React hook
-useMediaUpload({ plugins: [createJpegCompressorPlugin()] });
-```
-
-### Plugin Stage Order
-
-```
-validate-allowlist          [built-in]
-original                    [built-in, if saveOriginal]
-video-poster-thumbnail      [built-in, if video + saveThumbnails]
---- plugin stages ---       [from matched plugins, in array order]
-final-fallback-to-original  [built-in, if fallbackToOriginal]
-```
-
-## Built-in Plugins
-
-### `createJpegCompressorPlugin()`
-
-**Import:** `@vivsh1999/upupload/plugins/jpeg-compressor`
-
-Handles standard raster images (JPEG, PNG, WebP, BMP, GIF, AVIF).
-
-- Compresses the image via `browser-image-compression` to produce `optimized` and `thumbnail` JPEG artifacts
-- Does NOT handle RAW/HEIC/TIFF — use `createRawToJpegPlugin()` for those
-- **Dep:** `browser-image-compression` (install separately)
-
-### `createRawToJpegPlugin()`
-
-**Import:** `@vivsh1999/upupload/plugins/raw-to-jpeg`
-
-Handles camera RAW (CR3, DNG, NEF, ARW, etc.), HEIC/HEIF, and TIFF files.
-
-- Decodes to a raster JPEG using LibRaw WASM / heic-decode / utif
-- Compresses the decoded image via `browser-image-compression` to produce `optimized` and `thumbnail` JPEG artifacts
-- Shares decode cache between optimized and thumbnail stages (decodes RAW once)
-- **Deps:** `libraw-wasm` (required), `heic-decode`/`heic2any`/`utif` (optional)
-
-### Tree-shaking
-
-Neither plugin is included in your bundle unless you explicitly import its sub-path:
-
-```ts
-// ✗ Zero cost — no plugin code imported
-import { runDefaultBrowserPipeline } from "@vivsh1999/upupload/browser";
-
-// ✓ 4 kB added — only jpeg-compressor code
-import { createJpegCompressorPlugin } from "@vivsh1999/upupload/plugins/jpeg-compressor";
-
-// ✓ 12 kB added — only raw-to-jpeg code
-import { createRawToJpegPlugin } from "@vivsh1999/upupload/plugins/raw-to-jpeg";
-```
-
-## Writing a Custom Plugin
-
-Create an object matching `ProcessingPlugin<TOpts>`. Stages use `input`, `ctx.log`, `ctx.shared`, and share state via the `createStages` closure:
-
-```ts
-import type { FileClassification, ProcessingPlugin } from "@vivsh1999/upupload";
-import type { DefaultBrowserPipelineOptions } from "@vivsh1999/upupload/browser";
-
-const metadataPlugin: ProcessingPlugin<DefaultBrowserPipelineOptions> = {
-  id: "metadata-annotator",
-  name: "Metadata Annotator Plugin",
-  supports(file) {
-    return (file.type ?? "").startsWith("image/");
-  },
-  createStages(input, opts, classif, ctx) {
-    return [
-      {
-        id: "read-metadata",
-        when: () => ({ run: true }),
-        run: async () => {
-          const img = new Image();
-          const url = URL.createObjectURL(input.file);
-          await new Promise((resolve) => {
-            img.onload = resolve;
-            img.src = url;
-          });
-          URL.revokeObjectURL(url);
-
-          ctx.log("info", `${input.name}: ${img.width}x${img.height}`);
-          ctx.shared.set("detected-dimensions", `${img.width}x${img.height}`);
-
-          return {
-            artifacts: [
-              {
-                variant: "metadata",
-                file: new Blob([JSON.stringify({ width: img.width, height: img.height })], {
-                  type: "application/json",
-                }),
-                filename: `${classif.stemName}.json`,
-                filetype: "application/json",
-              },
-            ],
-            info: [
-              { level: "info", message: `${img.width}x${img.height}`, code: "image_metadata" },
-            ],
-            removeFromQueue: false,
-          };
-        },
-      },
-    ];
-  },
-};
-```
-
-See `examples/vanilla-html/custom-pipeline.js` for a complete working example.
-
-### `preloadBrowserPipelineForFiles`
-
-```ts
-import { preloadBrowserPipelineForFiles } from "@vivsh1999/upupload/browser";
-
-preloadBrowserPipelineForFiles(
-  fileList,
-  { saveOptimized: true, saveThumbnails: true },
-  { plugins: [createJpegCompressorPlugin()] },
-);
-```
-
-## Configuration
-
-### `DefaultBrowserPipelineOptions`
-
-```ts
-type DefaultBrowserPipelineOptions = {
-  saveOriginal: boolean; // default: false
-  saveOptimized: boolean; // default: true
-  saveThumbnails: boolean; // default: true
-  qualityPercent: number; // 1–100, default: 90
-  maxLongEdge: number | "original"; // default: 3840
-  thumbnailMaxEdge: number; // default: 640
-  optimizedMaxSizeMB: number; // default: 1
-  thumbnailMaxSizeMB: number; // default: 0.25
-  fallbackToOriginal: boolean; // default: true
-  debug?: boolean;
-};
-```
-
-### `UseMediaUploadOptions` (React hook)
-
-```ts
-interface UseMediaUploadOptions<TMeta = void> {
-  initialConfig?: Partial<DefaultBrowserPipelineOptions>;
-  plugins?: ProcessingPlugin[];
-  transport?: "tus" | "custom"; // "xhr" removed
-  tus?: TusUploadOptions;
-  uploadHandler?: MediaUploadCustomUploadHandler;
-  maxNumberOfFiles?: number;
-  tuning?: MediaUploadTuningOptions; // { simultaneousUploads?: number }
-  getMeta?: (file: File) => TMeta; // Per-file metadata
-  onInfo?: (message: string) => void;
-  onWarning?: (message: string) => void;
-  onError?: (error: Error, context?: MediaUploadCustomUploadContext) => void;
-  onFileComplete?: (fileName: string) => void;
-}
-```
-
-### `UseMediaUploadResult` (React hook return)
-
-```ts
-interface UseMediaUploadResult<TMeta = void> {
-  config: DefaultBrowserPipelineOptions;
-  updateConfig: (patch: Partial<DefaultBrowserPipelineOptions>) => void;
-  queue: MediaUploadQueueItem<TMeta>[];
-  startUpload: (fileIds?: string[]) => Promise<void>; // Selective processing
-  clear: () => void;
-  retry: (fileId: string) => void;
-  cancelUpload: (fileId: string) => void; // Cancel one file
-  cancelAll: () => void; // Cancel everything
-  isBusy: boolean;
-  isDragOver: boolean; // Drag-and-drop visual state
-  getDropTargetProps: <T>(props?: T) => T & { onDrop; onDragOver; onDragEnter; onDragLeave };
-  getFileInputProps: <T>(props?: T) => T & { type: "file"; multiple: true };
-  getFolderInputProps: <T>(props?: T) => T & { type: "file"; multiple: true; webkitdirectory };
-}
-```
-
-### `MediaUploadQueueItem`
-
-```ts
-interface MediaUploadQueueItem<TMeta = void> {
-  id: string;
-  name: string;
-  file: File; // Direct file reference
-  status: "idle" | "processing" | "uploading" | "error";
-  progress: number; // 0–100
-  error?: string;
-  previewUrl?: string; // Auto-released on clear/cancel
-  meta?: TMeta; // From getMeta()
-  artifacts?: {
-    // Per-artifact progress
-    variant: string;
-    filename: string;
-    progress: number;
-    url?: string; // Blob URL for preview
-  }[];
-}
-```
-
-## Semaphore Utility
-
-Built-in concurrency limiter. Available as a standalone utility:
-
-```ts
-import { Semaphore } from "@vivsh1999/upupload/react";
-
-const sem = new Semaphore(4); // max 4 concurrent
-await Promise.all(tasks.map((t) => sem.run(() => process(t))));
-```
-
-## Pipeline Result
-
-```ts
-{
-  artifacts: PipelineArtifact[];  // Produced files (variant + file + metadata)
-  info: PipelineInfoMessage[];    // Info/warning messages
-  removeFromQueue: boolean;       // True for junk files (folder drops)
-}
-```
-
-Artifact variants: `"original"`, `"optimized"`, `"thumbnail"`.
+| Topic                                                    | File                                           |
+| -------------------------------------------------------- | ---------------------------------------------- |
+| Pipeline engine (stages, features, utilities)            | [docs/pipeline.md](docs/pipeline.md)           |
+| Plugin system (architecture, built-in, custom, ordering) | [docs/plugins.md](docs/plugins.md)             |
+| React hook (useMediaUpload, options, return value)       | [docs/react.md](docs/react.md)                 |
+| Configuration reference (all types)                      | [docs/configuration.md](docs/configuration.md) |
 
 ## Decoder Dependencies
 
@@ -431,17 +115,13 @@ The `raw-to-jpeg` plugin optionally imports decoders at runtime:
 | `heic2any`    | HEIC/HEIF                        | Fallback when `heic-decode` unavailable |
 | `utif`        | TIFF                             | Decodes to RGBA → JPEG                  |
 
-Install any you need:
-
 ```sh
 npm add libraw-wasm heic-decode utif
 ```
 
 ## Examples
 
-- [`examples/vanilla-html`](./examples/vanilla-html) — two pages:
-  - `index.html` — basic pipeline with both plugins
-  - `custom-pipeline.html` — both plugins plus a custom `metadata-annotator` plugin
+- [`examples/vanilla-html`](./examples/vanilla-html) — basic pipeline + custom pipeline with a metadata-annotator plugin
 - [`examples/tanstack-start`](./examples/tanstack-start) — TanStack Start app with TUS uploads and the React hook
 
 ## Benchmarks
@@ -450,36 +130,36 @@ Autogenerated from `vitest bench` (via pre-commit hook).
 
 | Benchmark                                       | Ops/sec       |
 | ----------------------------------------------- | ------------- |
-| video (MIME match)                              | 14,918,699.90 |
-| RAW octet-stream (extension match)              | 10,249,800.79 |
-| SVG (MIME match)                                | 13,585,377.48 |
-| raster image (MIME match)                       | 14,316,744.54 |
-| audio (MIME match)                              | 14,725,434.67 |
-| reject (text/plain)                             | 15,990,161.81 |
-| by MIME                                         | 7,570,637.88  |
-| by extension                                    | 10,482,915.12 |
-| false (image)                                   | 9,552,759.89  |
-| by MIME                                         | 7,698,888.38  |
-| by extension                                    | 10,538,316.42 |
-| false (image)                                   | 9,877,132.14  |
-| RAW extension — true                            | 2,229,496.50  |
-| non-RAW extension — false                       | 11,678,889.51 |
-| .heic extension — true                          | 9,943,912.65  |
-| image/heif MIME — true                          | 7,830,073.92  |
-| false (PNG)                                     | 8,416,360.55  |
-| .tif extension — true                           | 10,738,313.96 |
-| .tiff extension — true                          | 8,613,527.81  |
-| image/tiff MIME — true                          | 7,527,511.58  |
-| false (JPEG)                                    | 7,584,108.59  |
-| video — true                                    | 6,610,741.13  |
-| audio — true                                    | 7,445,725.14  |
-| SVG — true                                      | 5,746,252.26  |
-| raster PNG — false                              | 6,021,800.36  |
-| RAW extension — true                            | 5,849,933.73  |
-| raster PNG — true                               | 5,546,495.62  |
-| SVG — false                                     | 6,152,225.98  |
-| audio — false                                   | 7,001,996.15  |
-| 7 async stages (like real pipeline)             | 128.23        |
-| 7 stages with half skipped (when returns false) | 225.55        |
-| stage error → onError fallback                  | 299.59        |
-| stage error → onError skip                      | 302.56        |
+| video (MIME match)                              | 14,281,754.83 |
+| RAW octet-stream (extension match)              | 10,173,335.39 |
+| SVG (MIME match)                                | 13,579,119.71 |
+| raster image (MIME match)                       | 14,248,550.80 |
+| audio (MIME match)                              | 14,281,224.94 |
+| reject (text/plain)                             | 15,711,503.91 |
+| by MIME                                         | 9,534,327.39  |
+| by extension                                    | 11,885,594.69 |
+| false (image)                                   | 13,354,703.41 |
+| by MIME                                         | 9,636,836.34  |
+| by extension                                    | 11,633,280.88 |
+| false (image)                                   | 12,702,207.49 |
+| RAW extension — true                            | 2,529,974.50  |
+| non-RAW extension — false                       | 15,055,055.28 |
+| .heic extension — true                          | 12,009,974.58 |
+| image/heif MIME — true                          | 9,155,311.58  |
+| false (PNG)                                     | 10,745,238.90 |
+| .tif extension — true                           | 12,351,836.89 |
+| .tiff extension — true                          | 11,858,802.67 |
+| image/tiff MIME — true                          | 10,323,055.30 |
+| false (JPEG)                                    | 10,604,037.85 |
+| video — true                                    | 9,135,319.87  |
+| audio — true                                    | 9,637,295.11  |
+| SVG — true                                      | 7,247,290.36  |
+| raster PNG — false                              | 5,929,403.63  |
+| RAW extension — true                            | 6,504,267.80  |
+| raster PNG — true                               | 6,778,609.66  |
+| SVG — false                                     | 7,205,977.22  |
+| audio — false                                   | 9,180,923.98  |
+| 7 async stages (like real pipeline)             | 127.91        |
+| 7 stages with half skipped (when returns false) | 225.26        |
+| stage error → onError fallback                  | 298.03        |
+| stage error → onError skip                      | 301.78        |
