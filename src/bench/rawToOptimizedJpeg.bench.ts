@@ -1,5 +1,4 @@
 import { beforeAll, bench, describe } from "vitest";
-
 import {
   DEFAULT_BROWSER_PIPELINE_OPTIONS,
   preloadBrowserPipelineForFiles,
@@ -8,69 +7,226 @@ import {
 import type { PipelineSource } from "../core/types";
 
 declare global {
-  // eslint-disable-next-line no-var
   var __MEDIA_PIPELINE_DOM_CANVAS: boolean | undefined;
 }
 
-/** Public-domain-style sample DNG (~6 MB). Override with `MEDIA_PIPELINE_BENCH_RAW_URL`. */
+const DOM_CANVAS = !!globalThis.__MEDIA_PIPELINE_DOM_CANVAS;
+
+async function createTestImageFile(
+  width: number,
+  height: number,
+  filename: string,
+  type: string,
+): Promise<File> {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d")!;
+  const gradient = ctx.createLinearGradient(0, 0, width, height);
+  gradient.addColorStop(0, "red");
+  gradient.addColorStop(0.5, "green");
+  gradient.addColorStop(1, "blue");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+  for (let i = 0; i < 100; i++) {
+    ctx.fillStyle = `hsl(${i * 7}, 80%, 50%)`;
+    ctx.beginPath();
+    ctx.arc(Math.random() * width, Math.random() * height, Math.random() * 20 + 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), type));
+  return new File([blob], filename, { type, lastModified: Date.now() });
+}
+
+const DEFAULT_BENCH_OPTS = {
+  ...DEFAULT_BROWSER_PIPELINE_OPTIONS,
+  saveOriginal: false,
+  saveOptimized: true,
+  saveThumbnails: true,
+  qualityPercent: 90,
+  optimizedMaxSizeMB: 1,
+  maxLongEdge: 3840,
+  thumbnailMaxEdge: 640,
+  fallbackToOriginal: false,
+  debug: false,
+};
+
+// ---------------------------------------------------------------------------
+// RAW (DNG) → optimized JPEG
+// ---------------------------------------------------------------------------
+
 const DEFAULT_DNG_URL = "https://filesamples.com/samples/image/dng/sample1.dng";
 
 function benchRawFixtureUrl(): string {
-  const proc = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } })
-    .process;
+  const proc = (
+    globalThis as unknown as {
+      process?: { env?: Record<string, string | undefined> };
+    }
+  ).process;
   return proc?.env?.MEDIA_PIPELINE_BENCH_RAW_URL ?? DEFAULT_DNG_URL;
 }
 
-describe.skipIf(!globalThis.__MEDIA_PIPELINE_DOM_CANVAS)(
-  "RAW → JPEG (LibRaw) → optimized JPEG (90% quality, 1 MB max)",
-  () => {
-    let source: PipelineSource;
+describe.skipIf(!DOM_CANVAS)("RAW (DNG) → optimized JPEG", () => {
+  let source: PipelineSource;
+  beforeAll(async () => {
+    const url = benchRawFixtureUrl();
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Bench fixture fetch failed (${res.status}): ${url}`);
+    const buf = await res.arrayBuffer();
+    const file = new File([buf], "bench-sample.dng", { type: "application/octet-stream" });
+    source = { file, name: "bench-sample.dng", type: "application/octet-stream" };
+    preloadBrowserPipelineForFiles([{ name: file.name, type: file.type }], {
+      saveOptimized: true,
+      saveThumbnails: false,
+    });
+  }, 240_000);
 
-    beforeAll(async () => {
-      const url = benchRawFixtureUrl();
-      const res = await fetch(url);
-      if (!res.ok) {
-        throw new Error(`Bench fixture fetch failed (${res.status}): ${url}`);
-      }
-      const buf = await res.arrayBuffer();
-      const file = new File([buf], "bench-sample.dng", { type: "application/octet-stream" });
-      source = {
-        file,
-        name: "bench-sample.dng",
-        type: "application/octet-stream",
-      };
-      preloadBrowserPipelineForFiles([{ name: file.name, type: file.type }], {
-        saveOptimized: true,
+  bench(
+    "runDefaultBrowserPipeline",
+    async () => {
+      const out = await runDefaultBrowserPipeline(source, {
+        ...DEFAULT_BENCH_OPTS,
         saveThumbnails: false,
       });
-    }, 240_000);
+      const optimized = out.artifacts.find((a) => a.variant === "optimized");
+      if (!optimized) {
+        const codes = out.info.map((i) => i.code).filter(Boolean);
+        throw new Error(
+          `Expected optimized JPEG artifact (info codes: ${codes.join(", ") || "none"})`,
+        );
+      }
+      if (optimized.file.size > 1.1 * 1024 * 1024) {
+        throw new Error(`Expected optimized size ≤ ~1 MB; got ${optimized.file.size} bytes`);
+      }
+    },
+    { time: 120_000 },
+  );
+});
 
-    bench(
-      "runDefaultBrowserPipeline",
-      async () => {
-        const out = await runDefaultBrowserPipeline(source, {
-          ...DEFAULT_BROWSER_PIPELINE_OPTIONS,
-          saveOriginal: false,
-          saveOptimized: true,
-          saveThumbnails: false,
-          qualityPercent: 90,
-          optimizedMaxSizeMB: 1,
-          maxLongEdge: "original",
-          fallbackToOriginal: false,
-          debug: false,
-        });
-        const optimized = out.artifacts.find((a) => a.variant === "optimized");
-        if (!optimized) {
-          const codes = out.info.map((i) => i.code).filter(Boolean);
-          throw new Error(
-            `Expected optimized JPEG artifact (info codes: ${codes.join(", ") || "none"})`,
-          );
-        }
-        if (optimized.file.size > 1.1 * 1024 * 1024) {
-          throw new Error(`Expected optimized size ≤ ~1 MB; got ${optimized.file.size} bytes`);
-        }
-      },
-      { iterations: 5, time: 120_000 },
-    );
-  },
-);
+// ---------------------------------------------------------------------------
+// Raster JPEG → optimized JPEG
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!DOM_CANVAS)("Raster JPEG → optimized JPEG", () => {
+  let source: PipelineSource;
+  beforeAll(async () => {
+    const file = await createTestImageFile(1920, 1080, "photo.jpg", "image/jpeg");
+    source = { file, name: "photo.jpg", type: "image/jpeg" };
+    preloadBrowserPipelineForFiles([{ name: file.name, type: file.type }], {
+      saveOptimized: true,
+      saveThumbnails: false,
+    });
+  }, 30_000);
+
+  bench(
+    "runDefaultBrowserPipeline",
+    async () => {
+      const out = await runDefaultBrowserPipeline(source, {
+        ...DEFAULT_BENCH_OPTS,
+        saveThumbnails: false,
+      });
+      const optimized = out.artifacts.find((a) => a.variant === "optimized");
+      if (!optimized) {
+        const codes = out.info.map((i) => i.code).filter(Boolean);
+        throw new Error(`Expected optimized JPEG (codes: ${codes.join(", ") || "none"})`);
+      }
+    },
+    { time: 30_000 },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Raster PNG → optimized JPEG + thumbnail (the default config)
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!DOM_CANVAS)("Raster PNG → optimized JPEG + thumbnail", () => {
+  let source: PipelineSource;
+  beforeAll(async () => {
+    const file = await createTestImageFile(1920, 1080, "photo.png", "image/png");
+    source = { file, name: "photo.png", type: "image/png" };
+    preloadBrowserPipelineForFiles([{ name: file.name, type: file.type }], {
+      saveOptimized: true,
+      saveThumbnails: true,
+    });
+  }, 30_000);
+
+  bench(
+    "runDefaultBrowserPipeline",
+    async () => {
+      const out = await runDefaultBrowserPipeline(source, DEFAULT_BENCH_OPTS);
+      const optimized = out.artifacts.find((a) => a.variant === "optimized");
+      const thumbnail = out.artifacts.find((a) => a.variant === "thumbnail");
+      if (!optimized || !thumbnail) {
+        const codes = out.info.map((i) => i.code).filter(Boolean);
+        throw new Error(`Expected optimized + thumbnail (codes: ${codes.join(", ") || "none"})`);
+      }
+    },
+    { time: 30_000 },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Large PNG → optimized JPEG with maxLongEdge constraint
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!DOM_CANVAS)("Large PNG → optimized JPEG (maxLongEdge=1920)", () => {
+  let source: PipelineSource;
+  beforeAll(async () => {
+    const file = await createTestImageFile(4000, 3000, "large.png", "image/png");
+    source = { file, name: "large.png", type: "image/png" };
+    preloadBrowserPipelineForFiles([{ name: file.name, type: file.type }], {
+      saveOptimized: true,
+      saveThumbnails: false,
+    });
+  }, 30_000);
+
+  bench(
+    "runDefaultBrowserPipeline",
+    async () => {
+      const out = await runDefaultBrowserPipeline(source, {
+        ...DEFAULT_BENCH_OPTS,
+        saveThumbnails: false,
+        maxLongEdge: 1920,
+      });
+      const optimized = out.artifacts.find((a) => a.variant === "optimized");
+      if (!optimized) {
+        const codes = out.info.map((i) => i.code).filter(Boolean);
+        throw new Error(`Expected optimized artifact (codes: ${codes.join(", ") || "none"})`);
+      }
+    },
+    { time: 60_000 },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Thumbnail-only pipeline (no optimized output)
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!DOM_CANVAS)("PNG → thumbnail only", () => {
+  let source: PipelineSource;
+  beforeAll(async () => {
+    const file = await createTestImageFile(1920, 1080, "photo.png", "image/png");
+    source = { file, name: "photo.png", type: "image/png" };
+    preloadBrowserPipelineForFiles([{ name: file.name, type: file.type }], {
+      saveOptimized: false,
+      saveThumbnails: true,
+    });
+  }, 30_000);
+
+  bench(
+    "runDefaultBrowserPipeline",
+    async () => {
+      const out = await runDefaultBrowserPipeline(source, {
+        ...DEFAULT_BENCH_OPTS,
+        saveOptimized: false,
+        saveThumbnails: true,
+      });
+      const thumbnail = out.artifacts.find((a) => a.variant === "thumbnail");
+      if (!thumbnail) {
+        const codes = out.info.map((i) => i.code).filter(Boolean);
+        throw new Error(`Expected thumbnail (codes: ${codes.join(", ") || "none"})`);
+      }
+    },
+    { time: 30_000 },
+  );
+});

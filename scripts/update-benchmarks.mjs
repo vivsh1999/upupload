@@ -2,28 +2,42 @@
 import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 
+let output;
 try {
-  var output = execSync("pnpm bench", {
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  output = execSync("pnpm bench", { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
 } catch {
   console.error("Benchmarks failed — aborting.");
   process.exit(1);
 }
 
 const benchResults = [];
-const benchLineRe = /^\s+·\s+(.+?)\s+([\d,]+\.\d+)\s+/;
+
+const patterns = [
+  /^\s*·\s+(.+?)\s+([\d,]+\.\d+)\s+/,
+  /^\s*·\s+(.+?)\s+(\d[\d,]*\.?\d*)\s+ops\/sec/,
+  /^\s*(?:✓|✗|\d+)\s+(.+?)\s+(\d[\d,]*\.?\d*)\s+/,
+];
 
 for (const line of output.split("\n")) {
-  const m = line.match(benchLineRe);
-  if (m) {
-    benchResults.push({ name: m[1].trim(), hz: m[2] });
+  for (const re of patterns) {
+    const m = line.match(re);
+    if (m) {
+      const name = m[1].trim().replace(/\s+/g, " ");
+      const hz = m[2].replace(/,/g, "");
+      if (!isNaN(Number(hz))) {
+        benchResults.push({ name, hz: m[2] });
+      }
+      break;
+    }
   }
 }
 
 if (benchResults.length === 0) {
   console.log("No benchmark results found — skipping README update.");
+  console.log("Raw output (first 40 lines):");
+  const lines = output.split("\n");
+  console.log(lines.slice(0, 40).join("\n"));
+  if (lines.length > 40) console.log(`... (${lines.length - 40} more lines)`);
   process.exit(0);
 }
 
@@ -34,7 +48,6 @@ const section = header + rows + "\n";
 
 let readme = readFileSync("README.md", "utf-8");
 const idx = readme.indexOf("## Benchmarks");
-
 if (idx !== -1) {
   const nextSection = readme.indexOf("\n## ", idx + 1);
   const end = nextSection !== -1 ? nextSection : readme.length;
@@ -44,5 +57,13 @@ if (idx !== -1) {
 }
 
 writeFileSync("README.md", readme);
+
+// Re-format README.md so the pre-commit formatter hook passes.
+try {
+  execSync("vp check --fix README.md", { stdio: "ignore", timeout: 30_000 });
+} catch {
+  // non-fatal — the user will see the formatting failure on commit
+}
+
 execSync("git add README.md", { stdio: "ignore" });
-console.log("README.md updated with benchmark results.");
+console.log(`README.md updated with ${benchResults.length} benchmark results.`);
