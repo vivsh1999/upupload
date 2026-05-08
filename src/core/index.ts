@@ -1,4 +1,14 @@
 /** @module core */
+export type { PipelineContext, PipelineFactory, PipelineNode } from "./types";
 export * from "./types";
 export { runPipeline } from "./runPipeline";
-export { compose, stage, createTimingMiddleware, sharedGet, sharedSet } from "./utils";
+export {
+  compose,
+  stage,
+  createTimingMiddleware,
+  sharedGet,
+  sharedSet,
+  Pipeline,
+  runPipelineFrom,
+  flattenPipeline,
+} from "./utils";

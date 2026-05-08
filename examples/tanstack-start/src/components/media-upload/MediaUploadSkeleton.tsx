@@ -24,7 +24,7 @@ const defaultLabels: NonNullable<MediaUploadSkeletonProps["labels"]> = {
 
 function statusLabel(item: MediaUploadQueueItem, lb: MediaUploadSkeletonProps["labels"]) {
   if (item.status === "processing") return lb?.processing ?? defaultLabels.processing;
-  if (item.status === "uploading") return lb?.uploading ?? defaultLabels.uploading;
+  if (item.status === "complete") return lb?.uploading ?? defaultLabels.uploading;
   return null;
 }
 
@@ -104,28 +104,15 @@ export function MediaUploadSkeleton(props: MediaUploadSkeletonProps) {
     <div data-slot="toggle-row" className={cx(cn.toggleRow)}>
       <label data-slot="toggle-item" className={cx(cn.toggleItem)}>
         <span data-slot="toggle-label" className={cx(cn.toggleLabel)}>
-          {lb.saveOriginal}
-        </span>
-        <input
-          data-slot="toggle"
-          className={cx(cn.toggle)}
-          type="checkbox"
-          checked={props.saveOriginal}
-          disabled={props.disabled}
-          onChange={(e) => props.onSaveOriginalChange(e.target.checked)}
-        />
-      </label>
-      <label data-slot="toggle-item" className={cx(cn.toggleItem)}>
-        <span data-slot="toggle-label" className={cx(cn.toggleLabel)}>
           {lb.saveOptimized}
         </span>
         <input
           data-slot="toggle"
           className={cx(cn.toggle)}
           type="checkbox"
-          checked={props.saveOptimized}
+          checked={props.optimizedEnabled}
           disabled={props.disabled}
-          onChange={(e) => props.onSaveOptimizedChange(e.target.checked)}
+          onChange={(e) => props.onOptimizedEnabledChange(e.target.checked)}
         />
       </label>
       <label data-slot="toggle-item" className={cx(cn.toggleItem)}>
@@ -136,9 +123,9 @@ export function MediaUploadSkeleton(props: MediaUploadSkeletonProps) {
           data-slot="toggle"
           className={cx(cn.toggle)}
           type="checkbox"
-          checked={props.saveThumbnails}
+          checked={props.thumbnailEnabled}
           disabled={props.disabled}
-          onChange={(e) => props.onSaveThumbnailsChange(e.target.checked)}
+          onChange={(e) => props.onThumbnailEnabledChange(e.target.checked)}
         />
       </label>
     </div>

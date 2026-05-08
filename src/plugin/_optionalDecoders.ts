@@ -1,4 +1,4 @@
-import { blobToArrayBuffer, jpegFileFromImageData } from "./rasterize";
+import { blobToArrayBuffer, jpegFileFromImageData } from "./_rasterize";
 
 async function optionalImport<TModule = unknown>(moduleName: string): Promise<TModule | null> {
   try {

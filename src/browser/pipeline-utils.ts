@@ -1,43 +1,144 @@
-import type { PipelineInfoMessage } from "../core/types";
+import type { PipelineInfoMessage, PipelineSource } from "../core/types";
+import type { ProcessingPlugin } from "../plugin/types";
 
 // ---------------------------------------------------------------------------
 // Options type & defaults
 // ---------------------------------------------------------------------------
 
-export type DefaultBrowserPipelineOptions = {
-  saveOriginal: boolean;
-  saveOptimized: boolean;
-  saveThumbnails: boolean;
-
-  /** 1–100 */
-  qualityPercent: number;
-  maxLongEdge: "original" | number;
-
-  thumbnailMaxEdge: number;
-  optimizedMaxSizeMB: number;
-  thumbnailMaxSizeMB: number;
-
-  /**
-   * If requested outputs (optimized/thumbnail) cannot be produced in-browser
-   * and no server processor is configured, produce an original artifact anyway.
-   */
-  fallbackToOriginal: boolean;
-
+export type BrowserPipelineOptions = {
+  /** Enable debug logging to console. */
   debug?: boolean;
 };
 
-export const DEFAULT_BROWSER_PIPELINE_OPTIONS: DefaultBrowserPipelineOptions = {
-  saveOriginal: false,
-  saveOptimized: true,
-  saveThumbnails: true,
-  qualityPercent: 90,
-  maxLongEdge: 3840,
-  thumbnailMaxEdge: 640,
-  optimizedMaxSizeMB: 1,
-  thumbnailMaxSizeMB: 0.25,
-  fallbackToOriginal: true,
+export const DEFAULT_BROWSER_PIPELINE_OPTIONS: BrowserPipelineOptions = {
   debug: false,
 };
+
+// ---------------------------------------------------------------------------
+// Pipeline definition (per-type routing)
+// ---------------------------------------------------------------------------
+
+/**
+ * A pipeline definition selects file types by a `supports()` classifier and
+ * runs the given plugins against matching files. Use with
+ * {@link runDefaultBrowserPipeline} to define per-type processing paths.
+ *
+ * @example
+ * ```ts
+ * const pipelines: PipelineDef[] = [
+ *   {
+ *     id: "raw-photo",
+ *     supports: (f) => isCameraRawImage(f),
+ *     plugins: [createRawToJpegPlugin(), createJpegCompressorPlugin(…)],
+ *   },
+ *   {
+ *     id: "raster-photo",
+ *     supports: (f) => isSupportedMediaUpload(f) && !isCameraRawImage(f),
+ *     plugins: [createJpegCompressorPlugin(…)],
+ *   },
+ *   {
+ *     id: "video",
+ *     supports: (f) => isVideoLike(f),
+ *     plugins: [createVideoPosterPlugin()],
+ *   },
+ * ];
+ * ```
+ */
+/**
+ * A reference to a plugin by ID, with optional overrides for its options.
+ * Used inside {@link PipelineDef.plugins} to decouple plugin registration
+ * from pipeline configuration.
+ *
+ * @example
+ * ```ts
+ * { id: "jpeg-compressor", opts: { variant: "client-proof", quality: 85 } }
+ * ```
+ */
+export interface PluginRef {
+  /** ID of the registered plugin to use. */
+  id: string;
+  /** Override options merged on top of the plugin's default options. */
+  opts?: Record<string, unknown>;
+}
+
+/**
+ * A single entry in a pipeline's plugin list.
+ * Can be a concrete plugin instance or a reference to one by ID.
+ */
+export type PipelinePlugin = ProcessingPlugin<any> | PluginRef;
+
+export interface PipelineDef {
+  /** Unique identifier for this pipeline (used in logs & debugging). */
+  id: string;
+  /** Classifier — does this pipeline handle this file? */
+  supports(file: PipelineSource): boolean;
+  /**
+   * Plugins to run for files matching this pipeline.
+   * Each entry is either a concrete plugin instance or a reference
+   * to a registered plugin by ID with optional option overrides.
+   */
+  plugins?: PipelinePlugin[];
+  /**
+   * Nested sub-pipelines for recursive routing.
+   * When a pipeline matches and has sub-pipelines, the router descends
+   * into them to find the deepest matching leaf.
+   */
+  pipelines?: PipelineDef[];
+}
+
+function isPluginInstance(p: PipelinePlugin): p is ProcessingPlugin<any> {
+  return typeof (p as ProcessingPlugin<any>).supports === "function";
+}
+
+/**
+ * Resolve an array of {@link PipelinePlugin} entries against a plugin
+ * registry. Plugin references (`{ id, opts }`) are resolved to concrete
+ * plugin instances with merged options; bare instances are returned as-is.
+ */
+export function resolvePluginRefs(
+  plugins: PipelinePlugin[],
+  registry?: ProcessingPlugin<any>[],
+): ProcessingPlugin<any>[] {
+  if (!registry) {
+    // No registry — assume everything is a bare instance
+    return plugins as ProcessingPlugin<any>[];
+  }
+
+  return plugins.map((p) => {
+    if (isPluginInstance(p)) return p;
+
+    const plugin = registry.find((r) => r.id === p.id);
+    if (!plugin) {
+      throw new Error(
+        `Plugin "${p.id}" referenced in pipeline but not found in the plugin registry. ` +
+          "Make sure to pass it via the `plugins` option.",
+      );
+    }
+    if (!p.opts || Object.keys(p.opts).length === 0) return plugin;
+    return { ...plugin, options: { ...plugin.options, ...p.opts } };
+  });
+}
+
+/**
+ * Find the deepest matching leaf pipeline in a tree of PipelineDefs.
+ * Returns the leaf pipeline and its resolved plugins.
+ */
+export function resolvePipeline(
+  pipelines: PipelineDef[],
+  file: PipelineSource,
+  registry?: ProcessingPlugin<any>[],
+): { def: PipelineDef; plugins: ProcessingPlugin<any>[] } | null {
+  for (const def of pipelines) {
+    if (!def.supports(file)) continue;
+    if (def.pipelines && def.pipelines.length > 0) {
+      const child = resolvePipeline(def.pipelines, file, registry);
+      if (child) return child;
+    }
+    const resolved = resolvePluginRefs(def.plugins ?? [], registry);
+    return { def, plugins: resolved };
+  }
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // Filename helpers

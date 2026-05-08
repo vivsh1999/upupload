@@ -1,9 +1,13 @@
-import { useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { MediaUploadSkeleton } from "./MediaUploadSkeleton";
 import type { MaxLongEdgePreset, MediaUploadFieldProps } from "./types";
 import { useMediaUpload } from "./useMediaUpload";
+import { createJpegCompressorPlugin } from "@vivsh1999/upupload/plugins/jpeg-compressor";
+import { createRawToJpegPlugin } from "@vivsh1999/upupload/plugins/raw-to-jpeg";
+import { createVideoPosterPlugin } from "@vivsh1999/upupload/plugins/video-poster";
+import type { ProcessingPlugin } from "@vivsh1999/upupload/react";
 
 export function MediaUploadField(props: MediaUploadFieldProps) {
   const {
@@ -16,11 +20,8 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
     renderPicker,
     renderFileList,
     disabled,
-    initialConfig,
-    plugins,
-    transport,
-    tus,
-    uploadHandler,
+    plugins: extraPlugins,
+    pipelineConfig,
     maxNumberOfFiles,
     tuning,
     onInfo,
@@ -35,12 +36,44 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
+  const [optimizedEnabled, setOptimizedEnabled] = useState(true);
+  const [thumbnailEnabled, setThumbnailEnabled] = useState(true);
+  const [qualityPercent, setQualityPercent] = useState(90);
+  const [maxLongEdge, setMaxLongEdge] = useState<MaxLongEdgePreset>(3840);
+
+  const plugins = useMemo<ProcessingPlugin<any>[]>(() => {
+    const result: ProcessingPlugin<any>[] = [];
+
+    // One decoder instance — output is shared via pipeline context
+    result.push(createRawToJpegPlugin());
+
+    if (optimizedEnabled) {
+      result.push(
+        createJpegCompressorPlugin({
+          variant: "optimized",
+          quality: qualityPercent,
+          maxLongEdge,
+          maxSizeMB: 1,
+        }),
+      );
+    }
+    if (thumbnailEnabled) {
+      result.push(
+        createJpegCompressorPlugin({
+          variant: "thumbnail",
+          quality: 78,
+          maxLongEdge: 640,
+          maxSizeMB: 0.25,
+        }),
+      );
+    }
+    result.push(createVideoPosterPlugin(), ...(extraPlugins ?? []));
+    return result;
+  }, [optimizedEnabled, thumbnailEnabled, qualityPercent, maxLongEdge, extraPlugins]);
+
   const media = useMediaUpload({
-    initialConfig,
     plugins,
-    transport,
-    tus,
-    uploadHandler,
+    pipelineConfig,
     maxNumberOfFiles,
     tuning,
     onInfo: (message) => {
@@ -53,12 +86,14 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
     },
     onError: (error, context) => {
       onError?.(error, context);
-      const title = context?.fileName ? `Upload failed: ${context.fileName}` : "Uploader error";
+      const title = context?.fileName
+        ? `Processing failed: ${context.fileName}`
+        : "Processing error";
       toast.error(title, { description: error.message });
     },
-    onFileComplete: (fileName) => {
-      onFileComplete?.(fileName);
-      toast.success(`Uploaded: ${fileName}`);
+    onFileComplete: (item) => {
+      onFileComplete?.(item);
+      toast.success(`Processed: ${item.name}`);
     },
   });
 
@@ -69,16 +104,16 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
   return (
     <div data-slot="media-upload-field" className={className}>
       <MediaUploadSkeleton
-        saveOriginal={media.config.saveOriginal}
-        saveOptimized={media.config.saveOptimized}
-        saveThumbnails={media.config.saveThumbnails}
-        onSaveOriginalChange={(value) => media.updateConfig({ saveOriginal: value })}
-        onSaveOptimizedChange={(value) => media.updateConfig({ saveOptimized: value })}
-        onSaveThumbnailsChange={(value) => media.updateConfig({ saveThumbnails: value })}
-        qualityPercent={media.config.qualityPercent}
-        onQualityPercentChange={(value) => media.updateConfig({ qualityPercent: value })}
-        maxLongEdge={media.config.maxLongEdge as MaxLongEdgePreset}
-        onMaxLongEdgeChange={(value) => media.updateConfig({ maxLongEdge: value })}
+        debug={media.config.debug ?? false}
+        onDebugChange={(value) => media.updateConfig({ debug: value })}
+        optimizedEnabled={optimizedEnabled}
+        thumbnailEnabled={thumbnailEnabled}
+        onOptimizedEnabledChange={setOptimizedEnabled}
+        onThumbnailEnabledChange={setThumbnailEnabled}
+        qualityPercent={qualityPercent}
+        onQualityPercentChange={setQualityPercent}
+        maxLongEdge={maxLongEdge}
+        onMaxLongEdgeChange={setMaxLongEdge}
         resolutionOptions={resolutionOptions}
         fileInputRef={fileInputRef}
         folderInputRef={folderInputRef}

@@ -1,17 +1,16 @@
 /** @module react */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent, HTMLAttributes, ComponentProps } from "react";
-import type { DefaultBrowserPipelineOptions } from "../browser/pipeline";
+import type { BrowserPipelineOptions } from "../browser/pipeline";
 import { DEFAULT_BROWSER_PIPELINE_OPTIONS, runDefaultBrowserPipeline } from "../browser/pipeline";
-import { uploadArtifactWithTus } from "../browser/tusUpload";
-import type { PipelineArtifact, PipelineSource } from "../core/types";
+import type { PipelineSource } from "../core/types";
 import type { ProcessingPlugin } from "../plugin/types";
+import type { PipelineDef } from "../browser/pipeline";
 import { Semaphore } from "./utils";
 
-export type { DefaultBrowserPipelineOptions } from "../browser/pipeline";
+export type { BrowserPipelineOptions, PipelineDef } from "../browser/pipeline";
 export type { ProcessingPlugin, FileClassification } from "../plugin/types";
-export { preloadBrowserPipelineForFiles, toJpegName, toThumbName } from "../browser/pipeline";
-export { uploadArtifactWithTus } from "../browser/tusUpload";
+export { toJpegName, toThumbName } from "../browser/pipeline";
 export {
   isCameraRawImage,
   isHeicLike,
@@ -21,25 +20,9 @@ export {
   isAudioLike,
 } from "../browser";
 
-export type MediaUploadTransportMode = "tus" | "custom";
-
-export interface TusUploadOptions {
-  endpoint?: string;
-  chunkSize?: number;
-  retryDelays?: number[];
-}
-
-export interface MediaUploadCustomUploadContext {
-  fileName?: string;
-}
-
-export type MediaUploadCustomUploadHandler = (
-  artifact: PipelineArtifact,
-  context: MediaUploadCustomUploadContext,
-) => Promise<void>;
-
 export interface MediaUploadTuningOptions {
-  simultaneousUploads?: number;
+  /** Maximum number of files processed concurrently. Auto-detected based on CPU count. */
+  maxConcurrency?: number;
 }
 
 /** A single file in the upload queue with processing state. */
@@ -47,7 +30,7 @@ export interface MediaUploadQueueItem<TMeta = void> {
   id: string;
   name: string;
   file: File;
-  status: "idle" | "processing" | "uploading" | "error";
+  status: "idle" | "processing" | "complete" | "error";
   progress: number;
   error?: string;
   previewUrl?: string;
@@ -55,30 +38,28 @@ export interface MediaUploadQueueItem<TMeta = void> {
   artifacts?: {
     variant: string;
     filename: string;
-    progress: number;
+    blob: Blob;
     url?: string;
   }[];
 }
 
 export interface UseMediaUploadOptions<TMeta = void> {
-  initialConfig?: Partial<DefaultBrowserPipelineOptions>;
-  plugins?: ProcessingPlugin[];
-  transport?: MediaUploadTransportMode;
-  tus?: TusUploadOptions;
-  uploadHandler?: MediaUploadCustomUploadHandler;
+  plugins?: ProcessingPlugin<any>[];
+  pipeline?: PipelineDef[];
+  pipelineConfig?: Partial<BrowserPipelineOptions>;
   maxNumberOfFiles?: number;
   tuning?: MediaUploadTuningOptions;
   onInfo?: (message: string) => void;
   onWarning?: (message: string) => void;
-  onError?: (error: Error, context?: MediaUploadCustomUploadContext) => void;
-  onFileComplete?: (fileName: string) => void;
-  /** Initial metadata for each file added to the queue. */
+  onError?: (error: Error, context?: { fileName?: string }) => void;
+  onFileComplete?: (item: MediaUploadQueueItem<TMeta>) => void;
+  /** Metadata factory called for each file added to the queue. */
   getMeta?: (file: File) => TMeta;
 }
 
 export interface UseMediaUploadResult<TMeta = void> {
-  config: DefaultBrowserPipelineOptions;
-  updateConfig: (patch: Partial<DefaultBrowserPipelineOptions>) => void;
+  config: BrowserPipelineOptions;
+  updateConfig: (patch: Partial<BrowserPipelineOptions>) => void;
   queue: MediaUploadQueueItem<TMeta>[];
   startUpload: (fileIds?: string[]) => Promise<void>;
   clear: () => void;
@@ -109,15 +90,20 @@ function uid(): string {
   return `upupload-${counter}-${Date.now()}`;
 }
 
+function defaultConcurrency(): number {
+  if (typeof navigator !== "undefined" && navigator.hardwareConcurrency) {
+    return navigator.hardwareConcurrency >= 4 ? 4 : 2;
+  }
+  return 4;
+}
+
 export function useMediaUpload<TMeta = void>(
   options?: UseMediaUploadOptions<TMeta>,
 ): UseMediaUploadResult<TMeta> {
   const {
-    initialConfig,
     plugins,
-    transport,
-    tus,
-    uploadHandler,
+    pipeline,
+    pipelineConfig,
     maxNumberOfFiles,
     tuning,
     onInfo,
@@ -127,9 +113,8 @@ export function useMediaUpload<TMeta = void>(
     getMeta,
   } = options ?? {};
 
-  const [config, setConfig] = useState<DefaultBrowserPipelineOptions>({
-    ...DEFAULT_BROWSER_PIPELINE_OPTIONS,
-    ...initialConfig,
+  const [config, setConfig] = useState<BrowserPipelineOptions>({
+    debug: pipelineConfig?.debug ?? DEFAULT_BROWSER_PIPELINE_OPTIONS.debug,
   });
 
   const [queue, setQueue] = useState<MediaUploadQueueItem<TMeta>[]>([]);
@@ -142,17 +127,15 @@ export function useMediaUpload<TMeta = void>(
   const filesRef = useRef<Map<string, File>>(new Map());
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
 
-  const semRef = useRef(new Semaphore(tuning?.simultaneousUploads ?? 4));
+  const semRef = useRef(new Semaphore(tuning?.maxConcurrency ?? defaultConcurrency()));
   useEffect(() => {
-    semRef.current = new Semaphore(tuning?.simultaneousUploads ?? 4);
-  }, [tuning?.simultaneousUploads]);
+    semRef.current = new Semaphore(tuning?.maxConcurrency ?? defaultConcurrency());
+  }, [tuning?.maxConcurrency]);
 
   const processOptionsRef = useRef({
     config,
-    transport,
-    tus,
-    uploadHandler,
     plugins,
+    pipeline,
     onInfo,
     onWarning,
     onFileComplete,
@@ -160,17 +143,15 @@ export function useMediaUpload<TMeta = void>(
   });
   processOptionsRef.current = {
     config,
-    transport,
-    tus,
-    uploadHandler,
     plugins,
+    pipeline,
     onInfo,
     onWarning,
     onFileComplete,
     onError,
   };
 
-  const updateConfig = useCallback((patch: Partial<DefaultBrowserPipelineOptions>) => {
+  const updateConfig = useCallback((patch: Partial<BrowserPipelineOptions>) => {
     setConfig((prev) => ({ ...prev, ...patch }));
   }, []);
 
@@ -280,15 +261,13 @@ export function useMediaUpload<TMeta = void>(
   const processFile = useCallback(
     async (item: MediaUploadQueueItem<TMeta>, file: File): Promise<void> => {
       const {
-        config,
-        transport,
-        tus,
-        uploadHandler,
-        plugins,
-        onInfo,
-        onWarning,
-        onFileComplete,
-        onError,
+        config: currentConfig,
+        plugins: currentPlugins,
+        pipeline: currentPipeline,
+        onInfo: currentOnInfo,
+        onWarning: currentOnWarning,
+        onFileComplete: currentOnFileComplete,
+        onError: currentOnError,
       } = processOptionsRef.current;
 
       const controller = new AbortController();
@@ -307,8 +286,9 @@ export function useMediaUpload<TMeta = void>(
           type: file.type || "application/octet-stream",
         };
 
-        const result = await runDefaultBrowserPipeline(source, config, {
-          plugins,
+        const result = await runDefaultBrowserPipeline(source, currentConfig, {
+          plugins: currentPlugins,
+          pipeline: currentPipeline,
           signal: controller.signal,
         });
 
@@ -316,9 +296,9 @@ export function useMediaUpload<TMeta = void>(
 
         for (const msg of result.info) {
           if (msg.level === "warn") {
-            onWarning?.(msg.message);
+            currentOnWarning?.(msg.message);
           } else {
-            onInfo?.(msg.message);
+            currentOnInfo?.(msg.message);
           }
         }
 
@@ -329,79 +309,27 @@ export function useMediaUpload<TMeta = void>(
         }
 
         const artifactPreviews = result.artifacts.map((a) => {
-          const url = a.file instanceof Blob ? URL.createObjectURL(a.file) : undefined;
+          const blob = a.file instanceof Blob ? a.file : new Blob([a.file]);
+          const url = URL.createObjectURL(blob);
           return {
             variant: a.variant,
             filename: a.filename,
-            progress: 0,
+            blob,
             url,
           };
         });
 
-        setQueue((prev) =>
-          prev.map((q) =>
-            q.id === item.id
-              ? {
-                  ...q,
-                  status: "uploading" as const,
-                  artifacts: artifactPreviews,
-                  previewUrl: artifactPreviews.find((p) =>
-                    ["optimized", "thumbnail"].includes(p.variant),
-                  )?.url,
-                }
-              : q,
-          ),
-        );
+        const completedItem: MediaUploadQueueItem<TMeta> = {
+          ...item,
+          status: "complete" as const,
+          progress: 100,
+          artifacts: artifactPreviews,
+          previewUrl: artifactPreviews[0]?.url,
+        };
 
-        let completedArtifacts = 0;
-        const totalArtifacts = result.artifacts.length;
+        setQueue((prev) => prev.map((q) => (q.id === item.id ? completedItem : q)));
 
-        for (let i = 0; i < result.artifacts.length; i++) {
-          const artifact = result.artifacts[i]!;
-
-          if (controller.signal.aborted) return;
-
-          if (transport === "tus" && tus?.endpoint) {
-            await uploadArtifactWithTus({
-              endpoint: tus.endpoint,
-              chunkSize: tus.chunkSize ?? 5 * 1024 * 1024,
-              blob: artifact.file instanceof Blob ? artifact.file : new Blob([artifact.file]),
-              meta: {
-                variant: artifact.variant,
-                filename: artifact.filename,
-                filetype: artifact.filetype,
-                relativePath: artifact.relativePath,
-              },
-              signal: controller.signal,
-              onProgress: (percent) => {
-                const overall =
-                  totalArtifacts > 0
-                    ? ((completedArtifacts + percent / 100) / totalArtifacts) * 100
-                    : percent;
-                setQueue((prev) =>
-                  prev.map((q) =>
-                    q.id === item.id
-                      ? {
-                          ...q,
-                          progress: Math.min(99, overall),
-                          artifacts: q.artifacts?.map((pa, idx) =>
-                            idx === i ? { ...pa, progress: percent } : pa,
-                          ),
-                        }
-                      : q,
-                  ),
-                );
-              },
-            });
-          } else if (uploadHandler) {
-            await uploadHandler(artifact, { fileName: file.name });
-          }
-
-          completedArtifacts++;
-          onFileComplete?.(artifact.filename);
-        }
-
-        setQueue((prev) => prev.filter((q) => q.id !== item.id));
+        currentOnFileComplete?.(completedItem);
       } catch (err) {
         if (controller.signal.aborted) return;
         const message = err instanceof Error ? err.message : "Unknown error";
@@ -410,7 +338,7 @@ export function useMediaUpload<TMeta = void>(
             q.id === item.id ? { ...q, status: "error" as const, error: message, progress: 0 } : q,
           ),
         );
-        onError?.(err instanceof Error ? err : new Error(message), {
+        currentOnError?.(err instanceof Error ? err : new Error(message), {
           fileName: file.name,
         });
       } finally {
@@ -445,7 +373,6 @@ export function useMediaUpload<TMeta = void>(
 
   const cancelUpload = useCallback((fileId: string) => {
     abortControllersRef.current.get(fileId)?.abort();
-    // Release preview URLs
     setQueue((prev) => {
       const item = prev.find((q) => q.id === fileId);
       if (item) {
@@ -472,7 +399,6 @@ export function useMediaUpload<TMeta = void>(
   }, []);
 
   const clear = useCallback(() => {
-    // Release all preview URLs
     for (const item of queueRef.current) {
       item.artifacts?.forEach((a) => a.url && URL.revokeObjectURL(a.url));
       if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
@@ -480,7 +406,6 @@ export function useMediaUpload<TMeta = void>(
     setQueue([]);
   }, []);
 
-  // Warn about info-level messages from pipeline
   useEffect(() => {
     if (!onWarning) return;
     for (const item of queue) {
@@ -489,6 +414,13 @@ export function useMediaUpload<TMeta = void>(
       }
     }
   }, [queue, onWarning]);
+
+  // Auto-preload: eagerly warm up decoders for all registered plugins
+  useEffect(() => {
+    for (const p of plugins ?? []) {
+      p.preload?.();
+    }
+  }, [plugins]);
 
   return {
     config,

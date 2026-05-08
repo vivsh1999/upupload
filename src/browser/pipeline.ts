@@ -7,79 +7,20 @@ import {
   RAW_EXTENSIONS,
   VIDEO_EXTENSIONS,
 } from "./allowlist";
-import { DEFAULT_BROWSER_PIPELINE_OPTIONS, info, stem } from "./pipeline-utils";
-import type { DefaultBrowserPipelineOptions } from "./pipeline-utils";
+import { info, resolvePipeline, stem } from "./pipeline-utils";
+import type { BrowserPipelineOptions, PipelineDef } from "./pipeline-utils";
 import type { FileClassification, ProcessingPlugin } from "../plugin/types";
 
-export type { DefaultBrowserPipelineOptions } from "./pipeline-utils";
-export { DEFAULT_BROWSER_PIPELINE_OPTIONS, toJpegName, toThumbName } from "./pipeline-utils";
+export type { BrowserPipelineOptions, PipelineDef } from "./pipeline-utils";
+export {
+  DEFAULT_BROWSER_PIPELINE_OPTIONS,
+  resolvePipeline,
+  toJpegName,
+  toThumbName,
+} from "./pipeline-utils";
 
-export type DefaultBrowserPipelineVariant = "original" | "optimized" | "thumbnail";
-
-async function videoPosterFile(source: File, maxEdge: number): Promise<File | null> {
-  const url = URL.createObjectURL(source);
-  try {
-    const video = document.createElement("video");
-    video.src = url;
-    video.muted = true;
-    video.playsInline = true;
-    await new Promise<void>((resolve, reject) => {
-      video.onloadeddata = () => resolve();
-      video.onerror = () => reject(new Error("video load"));
-    });
-    video.currentTime = Math.min(0.25, (video.duration || 1) * 0.01);
-    await new Promise<void>((resolve) => {
-      video.onseeked = () => resolve();
-    });
-    const w = video.videoWidth;
-    const h = video.videoHeight;
-    if (!w || !h) return null;
-    const scale = Math.min(1, maxEdge / Math.max(w, h));
-    const cw = Math.max(1, Math.round(w * scale));
-    const ch = Math.max(1, Math.round(h * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = cw;
-    canvas.height = ch;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-    ctx.drawImage(video, 0, 0, cw, ch);
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((b) => resolve(b), "image/jpeg", 0.78),
-    );
-    if (!blob) return null;
-    return new File([blob], `${stem(source.name)}.poster.jpg`, {
-      type: "image/jpeg",
-      lastModified: Date.now(),
-    });
-  } catch {
-    return null;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-export function preloadBrowserPipelineForFiles(
-  files: Array<{ name: string; type?: string | null }>,
-  opts: Pick<DefaultBrowserPipelineOptions, "saveOptimized" | "saveThumbnails">,
-  extra?: { plugins?: ProcessingPlugin<DefaultBrowserPipelineOptions>[] },
-) {
-  if (!opts.saveOptimized && !opts.saveThumbnails) return;
-  const plugins = extra?.plugins ?? [];
-  const triggered = new Set<string>();
-  for (const file of files) {
-    for (const plugin of plugins) {
-      if (!triggered.has(plugin.id) && plugin.supports(file) && plugin.preload) {
-        triggered.add(plugin.id);
-        plugin.preload();
-      }
-    }
-  }
-}
-
-function topologicalSort(
-  plugins: ProcessingPlugin<DefaultBrowserPipelineOptions>[],
-): ProcessingPlugin<DefaultBrowserPipelineOptions>[] {
-  const byId = new Map<string, ProcessingPlugin<DefaultBrowserPipelineOptions>>();
+function topologicalSort(plugins: ProcessingPlugin<any>[]): ProcessingPlugin<any>[] {
+  const byId = new Map<string, ProcessingPlugin<any>>();
   const inDegree = new Map<string, number>();
   const adj = new Map<string, string[]>();
 
@@ -110,7 +51,7 @@ function topologicalSort(
     if (deg === 0) queue.push(id);
   }
 
-  const sorted: ProcessingPlugin<DefaultBrowserPipelineOptions>[] = [];
+  const sorted: ProcessingPlugin<any>[] = [];
   while (queue.length > 0) {
     const id = queue.shift()!;
     const plugin = byId.get(id);
@@ -127,14 +68,34 @@ function topologicalSort(
 
 export async function runDefaultBrowserPipeline(
   input: PipelineSource,
-  opts: DefaultBrowserPipelineOptions,
-  extra?: { plugins?: ProcessingPlugin<DefaultBrowserPipelineOptions>[]; signal?: AbortSignal },
+  pipelineOpts: BrowserPipelineOptions,
+  extra?: {
+    plugins?: ProcessingPlugin<any>[];
+    pipeline?: PipelineDef[];
+    signal?: AbortSignal;
+  },
 ): Promise<PipelineResult> {
-  const plugins = extra?.plugins ?? [];
+  // If pipeline definitions are provided, use the first matching one;
+  // otherwise fall back to the flat `plugins` array.
   const signal = extra?.signal;
 
+  let plugins: ProcessingPlugin<any>[];
+  if (extra?.pipeline) {
+    const resolved = resolvePipeline(extra.pipeline, input, extra.plugins);
+    if (!resolved) {
+      return {
+        artifacts: [],
+        info: [info("warn", `No matching pipeline definition for "${input.name}".`, "no_pipeline")],
+        removeFromQueue: true,
+      };
+    }
+    plugins = resolved.plugins;
+  } else {
+    plugins = extra?.plugins ?? [];
+  }
+
   const log = (level: "debug" | "info" | "warn" | "error", message: string, extra?: unknown) => {
-    if (!opts.debug) return;
+    if (!pipelineOpts.debug) return;
     const prefix = `[@vivsh1999/upupload] ${input.name}`;
     const fn = console[level] ?? console.log;
     fn(prefix, message, extra ?? "");
@@ -163,12 +124,11 @@ export async function runDefaultBrowserPipeline(
   const ctx: PipelineContext = { log, shared: new Map(), signal };
 
   const matchedPlugins = plugins.filter((p) => p.supports(input));
-
   const sorted = topologicalSort(matchedPlugins);
 
   const pluginStages: PipelineStage<PipelineSource, PipelineResult>[] = [];
   for (const plugin of sorted) {
-    const stages = plugin.createStages(input, opts, classif, ctx);
+    const stages = plugin.createStages(input, plugin.options, classif, ctx);
     for (let i = 0; i < stages.length; i++) {
       pluginStages.push(stages[i]!);
     }
@@ -196,19 +156,6 @@ export async function runDefaultBrowserPipeline(
             });
             return { artifacts: [], info: [], removeFromQueue: true };
           }
-          if (!opts.saveOriginal && !opts.saveOptimized && !opts.saveThumbnails) {
-            return {
-              artifacts: [],
-              info: [
-                info(
-                  "warn",
-                  "Enable at least one of: save original, save optimized, or save thumbnails.",
-                  "no_outputs_enabled",
-                ),
-              ],
-              removeFromQueue: true,
-            };
-          }
           if (!(input.file instanceof File)) {
             return {
               artifacts: [],
@@ -220,9 +167,11 @@ export async function runDefaultBrowserPipeline(
         },
       },
 
+      // Always include the original file as an artifact.
+      // Users who don't want it can filter it from the result.
       {
         id: "original",
-        when: () => ({ run: opts.saveOriginal }),
+        when: () => ({ run: true }),
         run: () => ({
           artifacts: [
             {
@@ -238,86 +187,14 @@ export async function runDefaultBrowserPipeline(
         }),
       },
 
-      {
-        id: "video-poster-thumbnail",
-        when: () => ({ run: opts.saveThumbnails && isVideo }),
-        run: async () => {
-          const poster = await videoPosterFile(input.file as File, opts.thumbnailMaxEdge);
-          if (!poster) {
-            return {
-              artifacts: [],
-              info: [
-                info(
-                  "warn",
-                  `Could not generate a video poster for "${input.name}".`,
-                  "poster_failed",
-                ),
-              ],
-              removeFromQueue: false,
-            };
-          }
-          return {
-            artifacts: [
-              {
-                variant: "thumbnail",
-                file: poster,
-                filename: poster.name,
-                filetype: poster.type || "application/octet-stream",
-                relativePath: input.relativePath,
-              },
-            ],
-            info: [],
-            removeFromQueue: false,
-          };
-        },
-      },
-
       ...pluginStages,
-
-      {
-        id: "final-fallback-to-original",
-        when: () => ({
-          run: opts.fallbackToOriginal && !opts.saveOriginal,
-        }),
-        run: () => {
-          const noTranscode = isVideo || isAudio || isSvg;
-          if (!noTranscode) return { artifacts: [], info: [], removeFromQueue: false };
-          return {
-            artifacts: [
-              {
-                variant: "original",
-                file: input.file,
-                filename: input.name,
-                filetype: input.type || "application/octet-stream",
-                relativePath: input.relativePath,
-              },
-            ],
-            info: [],
-            removeFromQueue: false,
-          };
-        },
-      },
     ],
   };
 
   const out = await runPipeline(input, def, { logger: log, signal });
 
-  if (out.artifacts.length === 0 && opts.fallbackToOriginal) {
-    out.artifacts.push({
-      variant: "original",
-      file: input.file,
-      filename: input.name,
-      filetype: input.type || "application/octet-stream",
-      relativePath: input.relativePath,
-    });
-    out.info.push(
-      info(
-        "info",
-        `Uploading "${input.name}" as original (no client-side processor available).`,
-        "fallback_original",
-      ),
-    );
-  }
+  // Filter out any artifact flagged with `skip: true`
+  out.artifacts = out.artifacts.filter((a) => !a.skip);
 
   return out;
 }

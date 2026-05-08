@@ -9,16 +9,17 @@ import { createRawToJpegPlugin } from "@vivsh1999/upupload/plugins/raw-to-jpeg";
 // Custom plugin — typed options, shared context, ctx.log
 // ---------------------------------------------------------------------------
 
-/** @type {import("@vivsh1999/upupload/plugins").ProcessingPlugin<import("@vivsh1999/upupload/browser").DefaultBrowserPipelineOptions>} */
+/** @type {import("@vivsh1999/upupload/plugins").ProcessingPlugin<Record<string, never>>} */
 const metadataPlugin = {
   id: "metadata-annotator",
   name: "Metadata Annotator Plugin",
+  options: {},
 
   supports(file) {
     return (file.type ?? "").startsWith("image/");
   },
 
-  createStages(input, opts, classif, ctx) {
+  createStages(input, _opts, classif, ctx) {
     return [
       {
         id: "read-metadata",
@@ -69,30 +70,20 @@ const metadataPlugin = {
 };
 
 // ---------------------------------------------------------------------------
-// Pipeline config — customised options
+// Pipeline config
 // ---------------------------------------------------------------------------
-
-const opts = {
-  ...DEFAULT_BROWSER_PIPELINE_OPTIONS,
-  saveOriginal: true,
-  qualityPercent: 80,
-  maxLongEdge: 2560,
-  thumbnailMaxEdge: 320,
-  fallbackToOriginal: true,
-  debug: true,
-};
 
 document.getElementById("config").textContent = JSON.stringify(
   {
-    saveOriginal: true,
-    qualityPercent: 80,
-    maxLongEdge: 2560,
-    thumbnailMaxEdge: 320,
+    pipelineConfig: {
+      debug: true,
+    },
     plugins: [
-      "createRawToJpegPlugin()    — RAW/HEIC/TIFF → optimized JPEG + thumbnail",
-      "createJpegCompressorPlugin() — JPEG/PNG/WebP → optimized JPEG + thumbnail",
-      "metadata-plugin (custom)     — reads dimensions",
+      "createRawToJpegPlugin()              — decodes RAW/HEIC/TIFF (no artifact)",
+      "createJpegCompressorPlugin × 2       — JPEG/PNG/WebP → optimized JPEG + thumbnail",
+      "metadata-plugin (custom)              — reads dimensions",
     ],
+    note: 'The original file is always included as variant "original".',
   },
   null,
   2,
@@ -121,8 +112,25 @@ processBtn.addEventListener("click", async () => {
   log(`File: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
   log("");
 
-  // Compose all three plugins
-  const plugins = [createRawToJpegPlugin(), createJpegCompressorPlugin(), metadataPlugin];
+  // Compose plugins (original is always included automatically)
+  // raw-to-jpeg decodes RAW/HEIC/TIFF and places the result in shared context.
+  // Each jpeg-compressor reads the decoded file and produces one variant.
+  const plugins = [
+    createRawToJpegPlugin(),
+    createJpegCompressorPlugin({
+      variant: "optimized",
+      quality: 80,
+      maxLongEdge: 2560,
+      maxSizeMB: 1,
+    }),
+    createJpegCompressorPlugin({
+      variant: "thumbnail",
+      quality: 78,
+      maxLongEdge: 320,
+      maxSizeMB: 0.25,
+    }),
+    metadataPlugin,
+  ];
 
   // Log which plugins matched this file
   log("Plugins matching this file:");
@@ -137,7 +145,11 @@ processBtn.addEventListener("click", async () => {
     type: file.type || "application/octet-stream",
   };
 
-  const result = await runDefaultBrowserPipeline(source, opts, { plugins });
+  const result = await runDefaultBrowserPipeline(
+    source,
+    { ...DEFAULT_BROWSER_PIPELINE_OPTIONS, debug: true },
+    { plugins },
+  );
 
   for (const m of result.info) {
     log(`[${m.level}] ${m.code ?? ""}: ${m.message}`);

@@ -16,6 +16,12 @@ export type PipelineArtifact = {
   filename: string;
   filetype: string;
   relativePath?: string;
+  /**
+   * When `true`, the pipeline will exclude this artifact from the final result.
+   * Useful for plugin stages that produce intermediate artifacts that other
+   * stages consume but that should not appear in the final output.
+   */
+  skip?: boolean;
 };
 
 /** Informational or warning message emitted during pipeline execution. */
@@ -30,6 +36,13 @@ export type PipelineResult = {
   artifacts: PipelineArtifact[];
   info: PipelineInfoMessage[];
   removeFromQueue: boolean;
+  /**
+   * Skip all unexecuted stages in the given group(s).
+   * Set by a stage to conditionally skip a set of downstream stages.
+   */
+  skipGroup?: string | string[];
+  /** Skip all remaining unexecuted stages in the pipeline. */
+  skipRemaining?: boolean;
 };
 
 /** Logger function injected into pipeline context. */
@@ -64,6 +77,29 @@ export type StageOnErrorAction<O> =
 /** A single processing stage in a pipeline definition. */
 export type PipelineStage<I, O> = {
   id: string;
+
+  /**
+   * When `true`, this stage can run concurrently with adjacent parallel stages.
+   * The engine groups consecutive `parallel: true` stages into a batch and
+   * executes them with `Promise.all`. Stages within a parallel batch share
+   * the same pipeline context.
+   */
+  parallel?: boolean;
+
+  /**
+   * IDs of stages that must successfully complete before this stage runs.
+   * If a depended-on stage is skipped or fails, this stage will not run.
+   */
+  dependsOn?: string[];
+
+  /**
+   * Optional group name for conditional skipping.
+   * If a previous stage returns `skipGroup` matching this group, this stage
+   * is skipped. Groups are useful for partitioning stages into phases that
+   * can be conditionally disabled.
+   */
+  group?: string;
+
   when: (input: I, ctx: PipelineContext, current: O) => Promise<StageDecision> | StageDecision;
   run: (input: I, ctx: PipelineContext) => Promise<O> | O;
   onError?: (
@@ -100,4 +136,30 @@ export type PipelineOptions = {
   logger?: PipelineLogger;
   signal?: AbortSignal;
   onProgress?: (event: PipelineProgressEvent) => void;
+  /**
+   * External pipeline context to use instead of creating a new one.
+   * Used internally by {@link runPipelineFrom} to share context
+   * between Pipeline factory flattening and stage execution.
+   */
+  ctx?: PipelineContext;
 };
+
+// ---------------------------------------------------------------------------
+// Pipeline factory (nestable pipeline builder)
+// ---------------------------------------------------------------------------
+
+/**
+ * A factory function that, given pipeline context and the source input,
+ * returns an array of pipeline nodes (stages or nested sub-pipelines).
+ *
+ * Created via {@link Pipeline}. Nest pipelines arbitrarily — sub-pipelines
+ * are flattened into the parent at runtime.
+ */
+export type PipelineFactory = {
+  (ctx: PipelineContext, source: PipelineSource): PipelineNode[];
+  /** @internal Marker for flattening. */
+  __pipeline?: true;
+};
+
+/** A node in a pipeline tree — either a stage or a nested sub-pipeline. */
+export type PipelineNode = PipelineStage<PipelineSource, PipelineResult> | PipelineFactory;

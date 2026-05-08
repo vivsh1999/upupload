@@ -1,28 +1,28 @@
 # Pipeline Engine
 
-Built-in stages run in this order:
+Stages run in this fixed order:
 
-| Stage                        | Condition                      | What it does                                                                                 |
-| ---------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------- |
-| `validate-allowlist`         | Always                         | Rejects non-media files (exe, txt, etc.)                                                     |
-| `original`                   | `saveOriginal: true`           | Passes source file through as `original` variant                                             |
-| `video-poster-thumbnail`     | `saveThumbnails: true` + video | Extracts a JPEG poster frame as `thumbnail`                                                  |
-| _plugin stages_              | Per plugin `supports()`        | Stages contributed by matched plugins (topologically sorted by `after`/`before` constraints) |
-| `final-fallback-to-original` | `fallbackToOriginal: true`     | Uploads original for video/audio/SVG                                                         |
+| Stage                | Condition        | What it does                                                                                 |
+| -------------------- | ---------------- | -------------------------------------------------------------------------------------------- |
+| `validate-allowlist` | Always           | Rejects non-media files (exe, txt, etc.)                                                     |
+| `original`           | Always           | Passes source file through as `original` variant                                             |
+| _plugin stages_      | Per `supports()` | Stages contributed by matched plugins (topologically sorted by `after`/`before` constraints) |
+
+After all stages run, any artifact with `skip: true` is filtered from the result.
 
 ## Features
 
-- **Shared context bag** (`ctx.shared: Map<string, unknown>`) — stages and plugins communicate by reading/writing shared keys. Use `sharedGet<T>()` / `sharedSet<T>()` from `@vivsh1999/upupload/core` for type-safe access.
-- **AbortSignal support** — pipelines and uploads can be cancelled mid-flight
-- **Stage middleware** — `PipelineDefinition.middleware` transforms every stage (timing, monitoring, etc.)
-- **Progress events** — `PipelineOptions.onProgress` fires `start`/`end` per stage
-- **Retry on error** — error handler supports `{ action: "retry"; maxRetries; delayMs? }`
-- **Accumulated result in `when()`** — stage guards receive the current accumulated `PipelineResult`
+- **Shared context bag** (`ctx.shared: Map<string, unknown>`) — stages and plugins communicate by reading/writing shared keys.
+- **AbortSignal support** — pipelines can be cancelled mid-flight.
+- **Stage middleware** — `PipelineDefinition.middleware` transforms every stage (timing, monitoring, etc.).
+- **Progress events** — `PipelineOptions.onProgress` fires `start`/`end` per stage.
+- **Retry on error** — error handler supports `{ action: "retry"; maxRetries; delayMs? }`.
+- **Accumulated result in `when()`** — stage guards receive the current accumulated `PipelineResult`.
 
 ## Utilities
 
 ```ts
-import { compose, stage, createTimingMiddleware, sharedGet, sharedSet } from "@vivsh1999/upupload/core";
+import { compose, stage, createTimingMiddleware } from "@vivsh1999/upupload/core";
 
 // Compose multiple definitions into one
 const fullDef = compose(def1, def2);
@@ -33,26 +33,24 @@ const def = stage("resize", async (input, ctx) => ({ artifacts: [], info: [], re
 // Full stage with guard
 const def = stage({
   id: "resize",
-  when: (input, ctx, current) => ({ run: opts.saveOptimized }),
+  when: (input, ctx, current) => ({ run: true }),
   run: async (input, ctx) => ({ ... }),
 });
 
 // Timing middleware — logs stage duration
 const timing = createTimingMiddleware((id, ms) => console.log(`${id} took ${ms}ms`));
-
-// Type-safe shared context access
-const dims = sharedGet<{ w: number; h: number }>(ctx.shared, "detected-dimensions");
-sharedSet(ctx.shared, "detected-dimensions", { w: 1920, h: 1080 });
 ```
 
 ## Result
 
 ```ts
 {
-  artifacts: PipelineArtifact[];  // Produced files (variant + file + metadata)
+  artifacts: PipelineArtifact[];  // Produced files (variant + file + metadata). Always includes "original".
   info: PipelineInfoMessage[];    // Info/warning messages
   removeFromQueue: boolean;       // True for junk files (folder drops)
 }
 ```
 
-Artifact variants: `"original"`, `"optimized"`, `"thumbnail"`.
+The original file is always included as artifact variant `"original"`. Filter it from the result if you don't want to upload it: `result.artifacts.filter(a => a.variant !== "original")`.
+
+Artifact variants are defined by plugins and are completely dynamic — any string is valid.

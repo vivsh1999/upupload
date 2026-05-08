@@ -1,8 +1,8 @@
 /** @module plugins/jpeg-compressor */
 import type { PipelineContext, PipelineResult, PipelineSource, PipelineStage } from "../core/types";
 import { fileExtensionLower, RASTER_IMAGE_EXTENSIONS, RAW_EXTENSIONS } from "../browser/allowlist";
-import type { DefaultBrowserPipelineOptions } from "../browser/pipeline-utils";
 import type { FileClassification, ProcessingPlugin } from "./types";
+import { R2J_SHARED_KEY } from "./raw-to-jpeg";
 
 type ImageCompressionFn = (
   file: File | Blob,
@@ -26,73 +26,105 @@ function preloadImageCompression() {
   void loadImageCompression();
 }
 
-function maxWidthOrHeight(preset: DefaultBrowserPipelineOptions["maxLongEdge"]) {
-  return preset === "original" ? undefined : preset;
-}
-
-function isNonRawRasterImage(file: { name: string; type?: string | null }): boolean {
+function isAnyImage(file: { name: string; type?: string | null }): boolean {
   const ext = fileExtensionLower(file.name);
   const mime = (file.type ?? "").toLowerCase();
+  if (mime.startsWith("image/")) return true;
+  if (file.type && file.type !== "application/octet-stream") return false;
+  return RASTER_IMAGE_EXTENSIONS.has(ext) || RAW_EXTENSIONS.has(ext) || ext === ".svg";
+}
 
-  const isRaster = mime.startsWith("image/") || RASTER_IMAGE_EXTENSIONS.has(ext);
-  if (!isRaster) return false;
-
-  if (RAW_EXTENSIONS.has(ext)) return false;
-  if (ext === ".heic" || ext === ".heif" || mime === "image/heic" || mime === "image/heif")
-    return false;
-  if (ext === ".tif" || ext === ".tiff" || mime === "image/tiff") return false;
-
-  return true;
+export interface JpegCompressorPluginOptions {
+  /** Output variant name (e.g. "client-proof", "gallery-thumb"). */
+  variant: string;
+  /** JPEG quality 1–100. */
+  quality: number;
+  /** Maximum long edge in pixels, or "original" for no downscale. */
+  maxLongEdge: number | "original";
+  /** Maximum output file size in MB. */
+  maxSizeMB: number;
+  /** Enable debug-level logging in the plugin. */
+  debug?: boolean;
 }
 
 /**
  * Create a plugin that compresses JPEG/PNG/WebP/BMP/GIF/AVIF images to JPEG.
  * Uses `browser-image-compression` under the hood.
- * @returns A {@link ProcessingPlugin} configured for non-RAW raster images.
+ *
+ * If a previous plugin (e.g. {@link createRawToJpegPlugin}) placed a decoded
+ * JPEG in the shared context (key {@link R2J_SHARED_KEY}), this compressor
+ * operates on that decoded file instead of the original input.
+ *
+ * Each instance produces exactly one output variant. For multiple variants
+ * use plugin references with overrides in a {@link PipelineDef}:
+ *
+ * ```ts
+ * const registry = [createJpegCompressorPlugin({ quality: 80, ... })];
+ *
+ * const pipelines = [{
+ *   id: "photos", supports: () => true,
+ *   plugins: [
+ *     { id: "jpeg-compressor", opts: { variant: "client-proof", quality: 85, ... } },
+ *     { id: "jpeg-compressor", opts: { variant: "gallery-thumb", quality: 78, ... } },
+ *   ],
+ * }];
+ * ```
  */
-export function createJpegCompressorPlugin(): ProcessingPlugin<DefaultBrowserPipelineOptions> {
+export function createJpegCompressorPlugin(
+  opts: JpegCompressorPluginOptions,
+): ProcessingPlugin<JpegCompressorPluginOptions> {
   return {
     id: "jpeg-compressor",
     name: "JPEG Compressor Plugin",
+    options: opts,
 
     supports(file: { name: string; type?: string | null }) {
-      return isNonRawRasterImage(file);
+      return isAnyImage(file);
     },
 
     createStages(
       input: PipelineSource,
-      opts: DefaultBrowserPipelineOptions,
+      pluginOpts: JpegCompressorPluginOptions,
       classif: FileClassification,
-      _ctx: PipelineContext,
+      ctx: PipelineContext,
     ): PipelineStage<PipelineSource, PipelineResult>[] {
       const stemName = classif.stemName;
+      const variantName = pluginOpts.variant;
+      const q = Math.min(100, Math.max(1, pluginOpts.quality)) / 100;
+      const maxWH = pluginOpts.maxLongEdge === "original" ? undefined : pluginOpts.maxLongEdge;
 
       return [
         {
-          id: "optimized-jpeg",
-          when: () => ({ run: opts.saveOptimized && !classif.isSvg }),
+          id: `jpeg-compressor:${variantName}`,
+          when: () => ({ run: !classif.isSvg }),
           run: async () => {
-            const q = Math.min(100, Math.max(1, opts.qualityPercent)) / 100;
-            const maxWH = maxWidthOrHeight(opts.maxLongEdge);
+            // If a previous plugin decoded the file (e.g. raw-to-jpeg),
+            // compress the decoded JPEG instead of the original.
+            const sourceFile =
+              (ctx.shared.get(R2J_SHARED_KEY) as File | undefined) ?? (input.file as File);
 
             const imageCompression = await loadImageCompression();
             try {
-              const compressed = await imageCompression(input.file as File, {
-                maxSizeMB: opts.optimizedMaxSizeMB,
+              const compressed = await imageCompression(sourceFile, {
+                maxSizeMB: pluginOpts.maxSizeMB,
                 maxWidthOrHeight: maxWH ?? 16384,
                 useWebWorker: true,
                 maxIteration: 12,
                 fileType: "image/jpeg",
                 initialQuality: q,
               });
-              const jpegFile = new File([compressed], `${stemName}.jpg`, {
-                type: "image/jpeg",
-                lastModified: Date.now(),
-              });
+              const jpegFile = new File(
+                [compressed],
+                variantName.endsWith(".jpg") ? variantName : `${stemName}.${variantName}.jpg`,
+                {
+                  type: "image/jpeg",
+                  lastModified: Date.now(),
+                },
+              );
               return {
                 artifacts: [
                   {
-                    variant: "optimized",
+                    variant: variantName,
                     file: jpegFile,
                     filename: jpegFile.name,
                     filetype: jpegFile.type,
@@ -103,75 +135,17 @@ export function createJpegCompressorPlugin(): ProcessingPlugin<DefaultBrowserPip
                 removeFromQueue: false,
               };
             } catch {
-              if (opts.fallbackToOriginal) {
-                return {
-                  artifacts: [
-                    {
-                      variant: "original",
-                      file: input.file,
-                      filename: input.name,
-                      filetype: input.type || "application/octet-stream",
-                      relativePath: input.relativePath,
-                    },
-                  ],
-                  info: [
-                    {
-                      level: "warn",
-                      message: `Could not optimize "${input.name}" in this browser. Uploading original.`,
-                      code: "optimize_failed",
-                    },
-                  ],
-                  removeFromQueue: false,
-                };
-              }
               return {
                 artifacts: [],
                 info: [
                   {
                     level: "warn",
-                    message: `Could not optimize "${input.name}" in this browser.`,
-                    code: "optimize_failed",
+                    message: `Could not produce "${variantName}" for "${input.name}".`,
+                    code: "variant_failed",
                   },
                 ],
                 removeFromQueue: false,
               };
-            }
-          },
-        },
-
-        {
-          id: "thumbnail-jpeg",
-          when: () => ({ run: opts.saveThumbnails && !classif.isSvg }),
-          run: async () => {
-            const imageCompression = await loadImageCompression();
-            try {
-              const thumb = await imageCompression(input.file as File, {
-                maxSizeMB: opts.thumbnailMaxSizeMB,
-                maxWidthOrHeight: opts.thumbnailMaxEdge,
-                useWebWorker: true,
-                maxIteration: 10,
-                fileType: "image/jpeg",
-                initialQuality: 0.78,
-              });
-              const thumbFile = new File([thumb], `${stemName}.thumb.jpg`, {
-                type: "image/jpeg",
-                lastModified: Date.now(),
-              });
-              return {
-                artifacts: [
-                  {
-                    variant: "thumbnail",
-                    file: thumbFile,
-                    filename: thumbFile.name,
-                    filetype: thumbFile.type,
-                    relativePath: input.relativePath,
-                  },
-                ],
-                info: [],
-                removeFromQueue: false,
-              };
-            } catch {
-              return { artifacts: [], info: [], removeFromQueue: false };
             }
           },
         },

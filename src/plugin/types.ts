@@ -20,11 +20,14 @@ export interface FileClassification {
 
 /**
  * A processing plugin contributes pipeline stages for specific file types.
- * @typeParam TOpts - The shape of pipeline options this plugin expects.
+ * @typeParam TOpts - The shape of plugin options this plugin expects.
  */
 export interface ProcessingPlugin<TOpts = Record<string, unknown>> {
   readonly id: string;
   readonly name: string;
+
+  /** Plugin's typed configuration. The pipeline passes this to {@link createStages}. */
+  readonly options: TOpts;
 
   /** Quick classifier — does this plugin handle this file? */
   supports(file: { name: string; type?: string | null }): boolean;

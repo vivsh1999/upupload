@@ -147,12 +147,13 @@ createTimingMiddleware(); // Log stage duration to ctx.log
 interface ProcessingPlugin<TOpts = Record<string, unknown>> {
   readonly id: string;
   readonly name: string;
+  readonly options: TOpts;
   supports(file: { name: string; type?: string | null }): boolean;
   createStages(
     input: PipelineSource,
-    opts: TOpts, // Typed options — no more cast
+    opts: TOpts,
     classif: FileClassification,
-    ctx: PipelineContext, // Logger + shared bag + signal
+    ctx: PipelineContext,
   ): PipelineStage<PipelineSource, PipelineResult>[];
   preload?(): void;
 }
@@ -163,13 +164,14 @@ interface ProcessingPlugin<TOpts = Record<string, unknown>> {
 ### Plugin Factory Pattern
 
 ```ts
-function createMyPlugin(): ProcessingPlugin<DefaultBrowserPipelineOptions> {
+function createMyPlugin(): ProcessingPlugin<Record<string, never>> {
   return {
     id: "my-plugin",
     name: "My Plugin",
+    options: {},
     supports(file) { /* return true/false */ },
     createStages(input, opts, classif, ctx) {
-      // opts is DefaultBrowserPipelineOptions — fully typed, no cast
+      // opts is fully typed — no cast
       // ctx.shared: Map<string, unknown> — inter-plugin communication
       // ctx.log(level, message, extra?) — structured logging
       // ctx.signal?: AbortSignal — cancellation support
@@ -181,12 +183,39 @@ function createMyPlugin(): ProcessingPlugin<DefaultBrowserPipelineOptions> {
 
 ### Built-in Plugins
 
-| Factory                        | File type            | Import path                                   |
-| ------------------------------ | -------------------- | --------------------------------------------- |
-| `createRawToJpegPlugin()`      | RAW/HEIC/TIFF → JPEG | `@vivsh1999/upupload/plugins/raw-to-jpeg`     |
-| `createJpegCompressorPlugin()` | JPEG/PNG/WebP → JPEG | `@vivsh1999/upupload/plugins/jpeg-compressor` |
+| Factory                            | File type            | Import path                                   |
+| ---------------------------------- | -------------------- | --------------------------------------------- |
+| `createRawToJpegPlugin(opts)`      | RAW/HEIC/TIFF → JPEG | `@vivsh1999/upupload/plugins/raw-to-jpeg`     |
+| `createJpegCompressorPlugin(opts)` | JPEG/PNG/WebP → JPEG | `@vivsh1999/upupload/plugins/jpeg-compressor` |
+| `createVideoPosterPlugin(opts)`    | Video → JPEG poster  | `@vivsh1999/upupload/plugins/video-poster`    |
 
-Both return `ProcessingPlugin<DefaultBrowserPipelineOptions>` — the `opts` parameter is fully typed.
+`createRawToJpegPlugin` is a pure decoder — it decodes RAW/HEIC/TIFF to JPEG and places the result in the shared pipeline context. It produces no artifact.
+
+`createJpegCompressorPlugin` reads the decoded file from shared context (if available) and compresses it into the configured variant. Register with defaults, then reference with overrides in a {@link PipelineDef}:
+
+```ts
+// Plugin registry (init with defaults)
+const registry = [
+  createRawToJpegPlugin(),
+  createJpegCompressorPlugin({ quality: 80, maxLongEdge: 1920, maxSizeMB: 1 }),
+];
+
+// Pipeline definitions reference by ID with overrides
+const pipelines = [
+  {
+    id: "photos",
+    supports: () => true,
+    plugins: [
+      { id: "raw-to-jpeg" },
+      { id: "jpeg-compressor", opts: { variant: "client-proof", quality: 85, maxLongEdge: 2560 } },
+      {
+        id: "jpeg-compressor",
+        opts: { variant: "thumbnail", quality: 78, maxLongEdge: 640, maxSizeMB: 0.25 },
+      },
+    ],
+  },
+];
+```
 
 ### Writing a Custom Plugin
 
@@ -247,19 +276,16 @@ It is also used internally by `useMediaUpload` with `tuning.simultaneousUploads`
 ### Plugin
 
 - `src/plugin/types.ts` — `ProcessingPlugin<TOpts>`, `FileClassification`
+- `src/plugin/definePlugin.ts` — Factory shorthand
 - `src/plugin/raw-to-jpeg.ts` — RAW/HEIC/TIFF decoder plugin
 - `src/plugin/jpeg-compressor.ts` — JPEG/PNG/WebP compressor plugin
+- `src/plugin/video-poster.ts` — Video poster frame plugin
+- `src/plugin/_rasterize.ts` — Canvas JPEG conversion (internal)
+- `src/plugin/_rawDecode.ts` — LibRaw WASM decoder (internal)
+- `src/plugin/_optionalDecoders.ts` — HEIC/TIFF dynamic imports (internal)
 - `src/plugin/index.ts` — Barrel
 
 ### Browser
-
-- `src/browser/pipeline.ts` — Default browser pipeline + `preloadBrowserPipelineForFiles`
-- `src/browser/pipeline-utils.ts` — Options, filename helpers
-- `src/browser/allowlist.ts` — Extension/MIME classifiers
-- `src/browser/tusUpload.ts` — TUS upload client
-- `src/browser/rawDecode.ts` — LibRaw WASM decoder
-- `src/browser/optionalDecoders.ts` — HEIC/TIFF runtime imports
-- `src/browser/rasterize.ts` — Canvas JPEG conversion
 
 ### React
 

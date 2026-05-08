@@ -1,6 +1,4 @@
 import { ClientOnly } from "@tanstack/react-router";
-import { createJpegCompressorPlugin } from "@vivsh1999/upupload/plugins/jpeg-compressor";
-import { createRawToJpegPlugin } from "@vivsh1999/upupload/plugins/raw-to-jpeg";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -13,7 +11,7 @@ function UploadLoadingCard() {
     <Card className="border-border/80 animate-pulse">
       <CardHeader>
         <CardTitle>Loading uploader…</CardTitle>
-        <CardDescription>Preparing client-side pipeline and TUS uploads.</CardDescription>
+        <CardDescription>Preparing client-side pipeline and processing.</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="bg-muted h-40 rounded-lg" />
@@ -26,16 +24,7 @@ export function UppyUploader() {
   return (
     <ClientOnly fallback={<UploadLoadingCard />}>
       <MediaUploadField
-        transport="tus"
-        tus={{}}
-        plugins={[createRawToJpegPlugin(), createJpegCompressorPlugin()]}
-        initialConfig={{
-          saveOriginal: false,
-          saveOptimized: true,
-          saveThumbnails: true,
-          qualityPercent: 90,
-          maxLongEdge: 3840,
-          fallbackToOriginal: true,
+        pipelineConfig={{
           debug: true,
         }}
         fileInputProps={{ accept: MEDIA_PICKER_ACCEPT }}

@@ -1,10 +1,15 @@
 import type {
+  PipelineContext,
   PipelineDefinition,
+  PipelineFactory,
+  PipelineNode,
+  PipelineOptions,
   PipelineResult,
   PipelineSource,
   PipelineStage,
   StageMiddleware,
 } from "./types";
+import { runPipeline } from "./runPipeline";
 
 /**
  * Compose multiple pipeline definitions into one.
@@ -97,4 +102,85 @@ export function createTimingMiddleware(
       },
     };
   };
+}
+
+// ---------------------------------------------------------------------------
+// Nestable Pipeline
+// ---------------------------------------------------------------------------
+
+function isPipelineNode(v: unknown): v is PipelineFactory {
+  return typeof v === "function" && (v as PipelineFactory).__pipeline === true;
+}
+
+/**
+ * Flatten a tree of pipeline nodes (stages and nested sub-pipelines) into
+ * a flat stage array. Nested pipelines are inlined recursively.
+ */
+export function flattenPipeline(
+  nodes: PipelineNode[],
+  ctx: PipelineContext,
+  source: PipelineSource,
+): PipelineStage<PipelineSource, PipelineResult>[] {
+  const stages: PipelineStage<PipelineSource, PipelineResult>[] = [];
+  for (const node of nodes) {
+    if (isPipelineNode(node)) {
+      const inner = node(ctx, source);
+      stages.push(...flattenPipeline(inner, ctx, source));
+    } else {
+      stages.push(node);
+    }
+  }
+  return stages;
+}
+
+/**
+ * Create a nestable pipeline factory. The callback receives pipeline context
+ * and the source input, and returns an array of stages and/or nested
+ * sub-pipelines.
+ *
+ * @example
+ * ```ts
+ * const videoPipeline = Pipeline((ctx, source) => [
+ *   { id: "transcode", when: () => ({ run: true }), run: async (input, ctx) => { … } },
+ * ]);
+ *
+ * const main = Pipeline((ctx, source) => [
+ *   { id: "classify", … },
+ *   ...(source.type?.startsWith("video/") ? videoPipeline(ctx, source) : []),
+ * ]);
+ * ```
+ */
+export function Pipeline(
+  factory: (ctx: PipelineContext, source: PipelineSource) => PipelineNode[],
+): PipelineFactory {
+  const fn = ((ctx: PipelineContext, source: PipelineSource) =>
+    factory(ctx, source)) as PipelineFactory;
+  fn.__pipeline = true;
+  return fn;
+}
+
+/**
+ * Run a pipeline from a {@link Pipeline} factory. Creates the shared context,
+ * flattens any nested sub-pipelines, and executes all stages in order.
+ *
+ * The same context object is passed to the factory (during flatten) and to
+ * every stage (during execution), so factories can pre-populate shared state.
+ */
+export async function runPipelineFrom(
+  source: PipelineSource,
+  factory: PipelineFactory,
+  options?: PipelineOptions,
+): Promise<PipelineResult> {
+  const log = options?.logger ?? (() => {});
+  const ctx: PipelineContext = {
+    log,
+    shared: new Map<string, unknown>(),
+    signal: options?.signal,
+  };
+
+  const nodes = factory(ctx, source);
+  const stages = flattenPipeline(nodes, ctx, source);
+  const def: PipelineDefinition<PipelineSource, PipelineResult> = { stages };
+
+  return runPipeline(source, def, { ...options, ctx });
 }

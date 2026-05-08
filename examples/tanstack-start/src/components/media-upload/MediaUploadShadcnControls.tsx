@@ -82,27 +82,20 @@ export function MediaUploadShadcnControls(props: MediaUploadSkeletonProps) {
         />
 
         <section className="space-y-3" aria-label="Output variants">
-          <h3 className="text-sm font-medium">What to upload</h3>
+          <h3 className="text-sm font-medium">What to produce</h3>
           <div className="grid gap-3">
-            <ToggleRow
-              title={props.labels?.saveOriginal ?? "Save original"}
-              description="Keep a byte-for-byte copy when the format allows."
-              checked={props.saveOriginal}
-              onCheckedChange={props.onSaveOriginalChange}
-              disabled={props.disabled}
-            />
             <ToggleRow
               title={props.labels?.saveOptimized ?? "Save optimized"}
               description="Raster / RAW → JPEG under your quality and size caps."
-              checked={props.saveOptimized}
-              onCheckedChange={props.onSaveOptimizedChange}
+              checked={props.optimizedEnabled}
+              onCheckedChange={props.onOptimizedEnabledChange}
               disabled={props.disabled}
             />
             <ToggleRow
               title={props.labels?.saveThumbnails ?? "Save thumbnails"}
               description="Smaller JPEG previews (and video posters when possible)."
-              checked={props.saveThumbnails}
-              onCheckedChange={props.onSaveThumbnailsChange}
+              checked={props.thumbnailEnabled}
+              onCheckedChange={props.onThumbnailEnabledChange}
               disabled={props.disabled}
             />
           </div>
@@ -226,8 +219,8 @@ export function MediaUploadShadcnControls(props: MediaUploadSkeletonProps) {
                         <p className="text-muted-foreground text-xs">
                           {item.status === "processing"
                             ? (props.labels?.processing ?? "Converting…")
-                            : item.status === "uploading"
-                              ? (props.labels?.uploading ?? "Uploading…")
+                            : item.status === "complete"
+                              ? (props.labels?.uploading ?? "Ready")
                               : item.status === "error"
                                 ? "Failed"
                                 : "Waiting"}
