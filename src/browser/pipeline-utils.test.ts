@@ -10,7 +10,7 @@ import {
   toJpegName,
   toThumbName,
 } from "./pipeline-utils";
-import type { PipelineDef, PipelinePlugin, PluginRef } from "./pipeline-utils";
+import type { PipelineDef, PluginRef } from "./pipeline-utils";
 import type { ProcessingPlugin } from "../plugin/types";
 import { Plugin } from "../plugin/plugin";
 import { emptyResult } from "../core/result";

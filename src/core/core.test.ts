@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { emptyResult, artifact, warning, infoMessage } from "./result";
 import {
   compose,
@@ -10,7 +10,7 @@ import {
   runPipelineFrom,
   flattenPipeline,
 } from "./utils";
-import type { PipelineContext, PipelineResult, PipelineSource } from "./types";
+import type { PipelineContext, PipelineSource } from "./types";
 import { runPipeline } from "./runPipeline";
 
 function source(name = "test.txt", type = "text/plain"): PipelineSource {

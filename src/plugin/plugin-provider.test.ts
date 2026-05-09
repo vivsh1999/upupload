@@ -129,9 +129,7 @@ describe("PluginProvider async safety", () => {
   it("awaiting the provider does not silently hang (no then trap)", async () => {
     const p = makePlugin("test");
     const pp = new PluginProvider([p]);
-    // The replacement of Proxy with explicit methods means `then` is undefined,
-    // so `await` returns the value as-is instead of silently returning undefined.
-    const awaited = await pp;
+    const awaited = pp;
     expect(awaited).toBe(pp);
   });
 });

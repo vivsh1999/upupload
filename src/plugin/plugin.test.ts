@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { Plugin } from "./plugin";
-import { emptyResult, artifact, warning } from "../core/result";
+import { emptyResult } from "../core/result";
 import type { FileClassification } from "./types";
 import type { PipelineContext, PipelineSource } from "../core/types";
 

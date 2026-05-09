@@ -50,7 +50,7 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
         jpegCompressor.with({
           variant: "optimized",
           quality: qualityPercent,
-          maxLongEdge,
+          maxLongEdge: maxLongEdge === "original" ? undefined : maxLongEdge,
           maxSizeMB: 1,
         }),
       );

@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { audioBufferToWav, isMediaRecorderSupported } from "./audio";
-
-const HAS_AUDIO_CONTEXT =
-  typeof AudioContext !== "undefined" || typeof (globalThis as any).AudioContext !== "undefined";
-
 describe("audioBufferToWav", () => {
   it("handles an empty buffer by producing a header-only WAV", () => {
     // When AudioContext is not available, create a minimal manual AudioBuffer

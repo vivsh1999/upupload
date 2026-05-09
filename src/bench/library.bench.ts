@@ -5,7 +5,7 @@ import { Plugin } from "../plugin/plugin";
 import { PluginProvider } from "../plugin/plugin-provider";
 import type { PipelineDefinition, PipelineResult, PipelineSource } from "../core/types";
 import { runPipeline } from "../core/runPipeline";
-import { validatePipeline, PIPELINE_CURRENT_KEY } from "../browser/pipeline-utils";
+import { validatePipeline } from "../browser/pipeline-utils";
 import type { PipelineDef } from "../browser/pipeline-utils";
 
 // ---------------------------------------------------------------------------
@@ -113,7 +113,7 @@ describe("PluginProvider", () => {
 
   bench("PluginProvider camelCase method", () => {
     const pp = new PluginProvider([a, b, c]);
-    const ref = (pp as any).betaCompressor({ variant: "thumb" });
+    (pp as any).betaCompressor({ variant: "thumb" });
   });
 });
 

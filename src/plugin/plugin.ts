@@ -1,7 +1,6 @@
 /** @module plugins */
 import type { FileClassification, ProcessingPlugin } from "./types";
 import type { PipelineContext, PipelineResult, PipelineSource, PipelineStage } from "../core/types";
-import { emptyResult } from "../core/result";
 
 /**
  * A processing plugin that contributes pipeline stages for specific file types.

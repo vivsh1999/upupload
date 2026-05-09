@@ -3,7 +3,7 @@ import { fileExtensionLower, RASTER_IMAGE_EXTENSIONS, RAW_EXTENSIONS } from "../
 import { PIPELINE_CURRENT_KEY } from "../browser/pipeline-utils";
 import { Plugin } from "./plugin";
 import { R2J_SHARED_KEY } from "./raw-to-jpeg";
-import { emptyResult, warning, artifact } from "../core/result";
+import { warning, artifact } from "../core/result";
 
 type ImageCompressionFn = (
   file: File | Blob,

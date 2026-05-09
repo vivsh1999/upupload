@@ -2,7 +2,7 @@
 import { fileExtensionLower, VIDEO_EXTENSIONS } from "../browser/allowlist";
 import { stem } from "../browser/pipeline-utils";
 import { Plugin } from "./plugin";
-import { emptyResult, warning, artifact } from "../core/result";
+import { warning, artifact } from "../core/result";
 import { PIPELINE_CURRENT_KEY } from "../browser/pipeline-utils";
 
 async function videoPosterFile(source: File, maxEdge: number): Promise<File | null> {
