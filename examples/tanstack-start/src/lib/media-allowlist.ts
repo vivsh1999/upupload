@@ -67,7 +67,7 @@ export function fileExtensionLower(name: string) {
 }
 
 /** Whether this file may be uploaded at all (folder drops may include junk). */
-export function isSupportedMediaUpload(file: { name: string; type?: string | null }) {
+export function isSupportedFileUpload(file: { name: string; type?: string | null }) {
   const ext = fileExtensionLower(file.name);
   const mime = (file.type ?? "").toLowerCase();
 

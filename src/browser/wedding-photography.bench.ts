@@ -5,10 +5,10 @@ import { jpegCompressor } from "../plugin/jpeg-compressor";
 import { rawToJpeg } from "../plugin/raw-to-jpeg";
 
 declare global {
-  var __MEDIA_PIPELINE_DOM_CANVAS: boolean | undefined;
+  var __FILE_PIPELINE_DOM_CANVAS: boolean | undefined;
 }
 
-const DOM_CANVAS = !!globalThis.__MEDIA_PIPELINE_DOM_CANVAS;
+const DOM_CANVAS = !!globalThis.__FILE_PIPELINE_DOM_CANVAS;
 
 async function createTestImageFile(
   width: number,
@@ -49,7 +49,7 @@ function benchRawFixtureUrl(): string {
       process?: { env?: Record<string, string | undefined> };
     }
   ).process;
-  return proc?.env?.MEDIA_PIPELINE_BENCH_RAW_URL ?? DEFAULT_DNG_URL;
+  return proc?.env?.FILE_PIPELINE_BENCH_RAW_URL ?? DEFAULT_DNG_URL;
 }
 
 describe.skipIf(!DOM_CANVAS)("Wedding RAW (DNG) → client-proof + gallery-thumb", () => {
