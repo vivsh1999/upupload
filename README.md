@@ -4,7 +4,7 @@ Client-first, multi-stage media uploader/processor with a **plugin architecture*
 
 - Pipeline engine handles validation, original passthrough, video posters, and safe fallback
 - **Plugin system** — every file-type-specific processor is a separate, tree-shakeable plugin
-- Ships two processing plugins: `raw-to-jpeg` (RAW/HEIC/TIFF) and `jpeg-compressor` (compress/thumbnail)
+- Ships two processing plugins: `rawToJpeg` (RAW/HEIC/TIFF) and `jpegCompressor` (compress/thumbnail)
 - **Zero-cost imports** — plugins are tree-shaken at the bundler level; pay only for what you use
 - **No auto-installed heavy deps** — plugin dependencies (`browser-image-compression`, `libraw-wasm`) are never installed unless you add them
 - Optional decoder dependencies (HEIC/HEIF, TIFF, LibRaw WASM) loaded via runtime imports
@@ -36,8 +36,8 @@ npm add heic-decode heic2any utif
 | Path                                          | Environment | Contents                                          | Bundle cost |
 | --------------------------------------------- | ----------- | ------------------------------------------------- | ----------- |
 | `@vivsh1999/upupload`                         | Browser     | Re-exports core + browser                         | —           |
-| `@vivsh1999/upupload/browser`                 | Browser     | Pipeline, allowlist, TUS upload, plugin types     | 8 kB        |
-| `@vivsh1999/upupload/core`                    | Universal   | Generic pipeline engine and types (no DOM)        | 1 kB        |
+| `@vivsh1999/upupload/browser`                 | Browser     | Pipeline, allowlist, audio/canvas utils, plugins  | 8 kB        |
+| `@vivsh1999/upupload/core`                    | Universal   | Generic pipeline engine, types, result helpers    | 1 kB        |
 | `@vivsh1999/upupload/react`                   | Browser     | `useMediaUpload` React hook                       | 60 kB       |
 | `@vivsh1999/upupload/server`                  | Node        | Server entry (minimal)                            | < 1 kB      |
 | `@vivsh1999/upupload/plugins`                 | Browser     | Barrel re-export of all plugins                   | N/A         |
@@ -54,13 +54,11 @@ Only the specific plugin path you import is added to your bundle.
 
 ```tsx
 import { useMediaUpload } from "@vivsh1999/upupload/react";
-import { createJpegCompressorPlugin } from "@vivsh1999/upupload/plugins/jpeg-compressor";
+import { jpegCompressor } from "@vivsh1999/upupload/plugins";
 
 function Uploader() {
-  const { getDropTargetProps, queue, startUpload } = useMediaUpload({
-    plugins: [createJpegCompressorPlugin()],
-    transport: "tus",
-    tus: { endpoint: "/api/tus" },
+  const { getDropTargetProps, getFileInputProps, queue, startUpload } = useMediaUpload({
+    plugins: [jpegCompressor.with({ quality: 80, maxSizeMB: 1 })],
   });
   return (
     <div {...getDropTargetProps()}>
@@ -80,10 +78,10 @@ function Uploader() {
 
 ```js
 import { runDefaultBrowserPipeline } from "@vivsh1999/upupload/browser";
-import { createJpegCompressorPlugin } from "@vivsh1999/upupload/plugins/jpeg-compressor";
+import { jpegCompressor } from "@vivsh1999/upupload/plugins";
 
 const result = await runDefaultBrowserPipeline(source, opts, {
-  plugins: [createJpegCompressorPlugin()],
+  plugins: [jpegCompressor.with({ quality: 80, maxSizeMB: 1 })],
 });
 ```
 
@@ -97,16 +95,19 @@ const result = await upload(file, { quality: 80 });
 
 ## Documentation
 
-| Topic                                                    | File                                           |
-| -------------------------------------------------------- | ---------------------------------------------- |
-| Pipeline engine (stages, features, utilities)            | [docs/pipeline.md](docs/pipeline.md)           |
-| Plugin system (architecture, built-in, custom, ordering) | [docs/plugins.md](docs/plugins.md)             |
-| React hook (useMediaUpload, options, return value)       | [docs/react.md](docs/react.md)                 |
-| Configuration reference (all types)                      | [docs/configuration.md](docs/configuration.md) |
+| Topic                                                    | File                                                                                                     |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Pipeline engine (stages, features, utilities)            | [docs/pipeline.md](docs/pipeline.md)                                                                     |
+| Plugin system (architecture, built-in, custom, ordering) | [docs/plugins.md](docs/plugins.md)                                                                       |
+| React hook (useMediaUpload, options, return value)       | [docs/react.md](docs/react.md)                                                                           |
+| Configuration reference (all types)                      | [docs/configuration.md](docs/configuration.md)                                                           |
+| Case study: e-commerce product photography               | [docs/case-studies/ecommerce-product-photography.md](docs/case-studies/ecommerce-product-photography.md) |
+| Case study: wedding photography client proofing          | [docs/case-studies/wedding-photography-uploader.md](docs/case-studies/wedding-photography-uploader.md)   |
+| Case study: podcast audio publishing                     | [docs/case-studies/podcast-audio-publishing.md](docs/case-studies/podcast-audio-publishing.md)           |
 
 ## Decoder Dependencies
 
-The `raw-to-jpeg` plugin optionally imports decoders at runtime:
+The `rawToJpeg` plugin optionally imports decoders at runtime:
 
 | Package       | Format                           | Strategy                                |
 | ------------- | -------------------------------- | --------------------------------------- |

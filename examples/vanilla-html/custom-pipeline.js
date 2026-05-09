@@ -2,72 +2,55 @@ import {
   DEFAULT_BROWSER_PIPELINE_OPTIONS,
   runDefaultBrowserPipeline,
 } from "@vivsh1999/upupload/browser";
-import { createJpegCompressorPlugin } from "@vivsh1999/upupload/plugins/jpeg-compressor";
-import { createRawToJpegPlugin } from "@vivsh1999/upupload/plugins/raw-to-jpeg";
+import { Plugin, rawToJpeg, jpegCompressor } from "@vivsh1999/upupload/plugins";
+import { artifact, infoMessage } from "@vivsh1999/upupload/core";
 
 // ---------------------------------------------------------------------------
 // Custom plugin — typed options, shared context, ctx.log
+// Uses the Plugin class with the `run` shorthand (no createStages wrapping)
 // ---------------------------------------------------------------------------
 
-/** @type {import("@vivsh1999/upupload/plugins").ProcessingPlugin<Record<string, never>>} */
-const metadataPlugin = {
+const metadataPlugin = new Plugin({
   id: "metadata-annotator",
   name: "Metadata Annotator Plugin",
   options: {},
-
   supports(file) {
     return (file.type ?? "").startsWith("image/");
   },
+  // run shorthand — the library auto-wraps this into a single stage
+  run: async (input, _opts, classif, ctx) => {
+    const img = new Image();
+    const url = URL.createObjectURL(input.file);
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+      img.src = url;
+    });
+    URL.revokeObjectURL(url);
 
-  createStages(input, _opts, classif, ctx) {
-    return [
-      {
-        id: "read-metadata",
-        when: () => ({ run: true }),
-        run: async () => {
-          const img = new Image();
-          const url = URL.createObjectURL(input.file);
-          await new Promise((resolve, reject) => {
-            img.onload = resolve;
-            img.onerror = reject;
-            img.src = url;
-          });
-          URL.revokeObjectURL(url);
+    const sizeKB = (input.file.size / 1024).toFixed(1);
+    const message = `${input.name}: ${img.width}×${img.height}, ${sizeKB} KB, type=${classif.ext}`;
+    ctx.log("info", message);
 
-          const sizeKB = (input.file.size / 1024).toFixed(1);
-          const message = `${input.name}: ${img.width}×${img.height}, ${sizeKB} KB, type=${classif.ext}`;
-          ctx.log("info", message);
+    // Read/write shared state between plugin stages
+    ctx.shared.set("detected-dimensions", `${img.width}x${img.height}`);
 
-          // Read/write shared state between plugin stages
-          ctx.shared.set("detected-dimensions", `${img.width}x${img.height}`);
+    const blob = new Blob(
+      [JSON.stringify({ width: img.width, height: img.height, sizeKB, ext: classif.ext }, null, 2)],
+      { type: "application/json" },
+    );
 
-          return {
-            artifacts: [
-              {
-                variant: "metadata",
-                file: new Blob(
-                  [
-                    JSON.stringify(
-                      { width: img.width, height: img.height, sizeKB, ext: classif.ext },
-                      null,
-                      2,
-                    ),
-                  ],
-                  { type: "application/json" },
-                ),
-                filename: `${classif.stemName}.metadata.json`,
-                filetype: "application/json",
-                relativePath: input.relativePath,
-              },
-            ],
-            info: [{ level: "info", message, code: "image_metadata" }],
-            removeFromQueue: false,
-          };
-        },
-      },
-    ];
+    return {
+      artifacts: [
+        artifact("metadata", blob, `${classif.stemName}.metadata.json`, "application/json", {
+          relativePath: input.relativePath,
+        }),
+      ],
+      info: [infoMessage(message, "image_metadata")],
+      removeFromQueue: false,
+    };
   },
-};
+});
 
 // ---------------------------------------------------------------------------
 // Pipeline config
@@ -79,9 +62,9 @@ document.getElementById("config").textContent = JSON.stringify(
       debug: true,
     },
     plugins: [
-      "createRawToJpegPlugin()              — decodes RAW/HEIC/TIFF (no artifact)",
-      "createJpegCompressorPlugin × 2       — JPEG/PNG/WebP → optimized JPEG + thumbnail",
-      "metadata-plugin (custom)              — reads dimensions",
+      "rawToJpeg                              — decodes RAW/HEIC/TIFF (no artifact)",
+      "jpegCompressor.with() × 2              — JPEG/PNG/WebP → optimized JPEG + thumbnail",
+      "metadata-plugin (custom Plugin class)   — reads dimensions",
     ],
     note: 'The original file is always included as variant "original".',
   },
@@ -113,17 +96,17 @@ processBtn.addEventListener("click", async () => {
   log("");
 
   // Compose plugins (original is always included automatically)
-  // raw-to-jpeg decodes RAW/HEIC/TIFF and places the result in shared context.
-  // Each jpeg-compressor reads the decoded file and produces one variant.
+  // rawToJpeg decodes RAW/HEIC/TIFF and places the result in shared context.
+  // Each jpegCompressor reads the decoded file and produces one variant.
   const plugins = [
-    createRawToJpegPlugin(),
-    createJpegCompressorPlugin({
+    rawToJpeg,
+    jpegCompressor.with({
       variant: "optimized",
       quality: 80,
       maxLongEdge: 2560,
       maxSizeMB: 1,
     }),
-    createJpegCompressorPlugin({
+    jpegCompressor.with({
       variant: "thumbnail",
       quality: 78,
       maxLongEdge: 320,

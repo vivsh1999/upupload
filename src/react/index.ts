@@ -9,8 +9,11 @@ import type { PipelineDef } from "../browser/pipeline";
 import { Semaphore } from "./utils";
 
 export type { BrowserPipelineOptions, PipelineDef } from "../browser/pipeline";
+export { Plugin } from "../plugin/plugin";
 export type { ProcessingPlugin, FileClassification } from "../plugin/types";
 export { toJpegName, toThumbName } from "../browser/pipeline";
+export { PluginProvider } from "../plugin/plugin-provider";
+export type { TypedPluginRef } from "../plugin/plugin-provider";
 export {
   isCameraRawImage,
   isHeicLike,

@@ -12,3 +12,4 @@ export {
   runPipelineFrom,
   flattenPipeline,
 } from "./utils";
+export { emptyResult, artifact, warning, infoMessage } from "./result";

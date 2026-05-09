@@ -2,8 +2,7 @@ import {
   DEFAULT_BROWSER_PIPELINE_OPTIONS,
   runDefaultBrowserPipeline,
 } from "@vivsh1999/upupload/browser";
-import { createJpegCompressorPlugin } from "@vivsh1999/upupload/plugins/jpeg-compressor";
-import { createRawToJpegPlugin } from "@vivsh1999/upupload/plugins/raw-to-jpeg";
+import { rawToJpeg, jpegCompressor } from "@vivsh1999/upupload/plugins";
 
 const logEl = document.getElementById("log");
 const fileInput = document.getElementById("file");
@@ -36,14 +35,14 @@ async function runPipelineForSelectedFile() {
     { ...DEFAULT_BROWSER_PIPELINE_OPTIONS, debug: true },
     {
       plugins: [
-        createRawToJpegPlugin(),
-        createJpegCompressorPlugin({
+        rawToJpeg,
+        jpegCompressor.with({
           variant: "optimized",
           quality: 90,
           maxLongEdge: 3840,
           maxSizeMB: 1,
         }),
-        createJpegCompressorPlugin({
+        jpegCompressor.with({
           variant: "thumbnail",
           quality: 78,
           maxLongEdge: 640,

@@ -61,7 +61,7 @@ export function stage(
   run?: PipelineStage<PipelineSource, PipelineResult>["run"],
 ): PipelineDefinition<PipelineSource, PipelineResult> {
   if (typeof idOrStage === "string") {
-    return { stages: [{ id: idOrStage, when: () => ({ run: true }), run: run! }] };
+    return { stages: [{ id: idOrStage, run: run! }] };
   }
   return { stages: [idOrStage] };
 }
@@ -141,7 +141,7 @@ export function flattenPipeline(
  * @example
  * ```ts
  * const videoPipeline = Pipeline((ctx, source) => [
- *   { id: "transcode", when: () => ({ run: true }), run: async (input, ctx) => { … } },
+ *   { id: "transcode", run: async (input, ctx) => { … } },
  * ]);
  *
  * const main = Pipeline((ctx, source) => [

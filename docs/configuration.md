@@ -12,26 +12,31 @@ The only pipeline-level option is `debug`. All processing tuning (quality, resol
 
 ## Plugin Options
 
-`createRawToJpegPlugin` is a pure decoder — accepts only `debug`:
+Plugins use the `Plugin` class with the `.with()` pattern:
 
 ```ts
-createRawToJpegPlugin();
-createRawToJpegPlugin({ debug: true });
+import { rawToJpeg, jpegCompressor, videoPoster } from "@vivsh1999/upupload/plugins";
+
+// RAW/HEIC/TIFF decoder — accepts only `debug`:
+rawToJpeg;
+rawToJpeg.with({ debug: true });
+
+// JPEG/PNG/WebP compressor — set base defaults:
+jpegCompressor.with({ quality: 80, maxLongEdge: 1920, maxSizeMB: 1 });
+// Defaults: `variant` → `"outputFile"`, `maxLongEdge` → `-1` (original size).
+
+// Video poster frame:
+videoPoster.with({ variant: "poster", maxEdge: 640 });
 ```
 
-`createJpegCompressorPlugin` takes default compression options. These become the base that pipeline definitions can override via `opts`:
+For multi-instance setups, use `instanceId` to disambiguate:
 
 ```ts
-createJpegCompressorPlugin({ quality: 80, maxLongEdge: 1920, maxSizeMB: 1 });
-
-// In a PipelineDef, reference by ID and override:
-// { id: "jpeg-compressor", opts: { variant: "client-proof", quality: 85, maxLongEdge: 2560 } }
-```
-
-`createVideoPosterPlugin` configures the poster frame:
-
-```ts
-createVideoPosterPlugin({ variant: "poster", maxEdge: 640 });
+jpegCompressor.with({ variant: "optimized", quality: 80 }, { instanceId: "opt" });
+jpegCompressor.with(
+  { variant: "thumbnail", quality: 78, maxLongEdge: 320 },
+  { instanceId: "thumb" },
+);
 ```
 
 ## Preset `upload()`

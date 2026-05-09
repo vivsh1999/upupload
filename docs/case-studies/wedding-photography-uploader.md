@@ -48,12 +48,11 @@ npm install @vivsh1999/upupload
 import { useMemo, useState } from "react";
 import {
   useMediaUpload,
+  PluginProvider,
   type UseMediaUploadOptions,
   type MediaUploadQueueItem,
 } from "@vivsh1999/upupload/react";
-import { createRawToJpegPlugin } from "@vivsh1999/upupload/plugins/raw-to-jpeg";
-import { createJpegCompressorPlugin } from "@vivsh1999/upupload/plugins/jpeg-compressor";
-import { createVideoPosterPlugin } from "@vivsh1999/upupload/plugins/video-poster";
+import { rawToJpeg, jpegCompressor, videoPoster } from "@vivsh1999/upupload/plugins";
 
 // Optional: implement TUS upload yourself
 // npm install tus-js-client
@@ -73,48 +72,50 @@ async function uploadBlob(blob: Blob, meta: { variant: string; filename: string 
 }
 
 function WeddingUploader() {
-  // ── Plugin registry (just initiation with defaults) ──
-  const registry = useMemo(
-    () => [
-      createRawToJpegPlugin(),
-      createJpegCompressorPlugin({ quality: 80, maxLongEdge: 1920, maxSizeMB: 1 }),
-      createVideoPosterPlugin({ variant: "poster", maxEdge: 640 }),
-    ],
+  // ── Plugin registry with typed PluginProvider ──
+  const pp = useMemo(
+    () =>
+      new PluginProvider([
+        rawToJpeg,
+        jpegCompressor.with({ quality: 80, maxLongEdge: 1920, maxSizeMB: 1 }),
+        videoPoster.with({ maxEdge: 640 }),
+      ]),
     [],
   );
 
   // ── Reactive config for pipeline overrides ──
   const [quality, setQuality] = useState(85);
-  const [maxLongEdge, setMaxLongEdge] = useState<number | "original">(2560);
+  const [maxLongEdge, setMaxLongEdge] = useState(2560);
 
-  // ── Pipeline definitions reference plugins by ID with overrides ──
+  // ── Pipeline definitions using typed PluginProvider methods ──
   const pipelines = useMemo(
     () => [
       {
         id: "media",
-        supports: () => true,
         pipelines: [
           {
             id: "raw-and-raster",
-            supports: (f: any) => !f.type?.startsWith("video/"),
+            supports: (f: any) =>
+              !f.type?.startsWith("video/") && pp.rawToJpeg().defaults.supports(f),
             plugins: [
-              { id: "raw-to-jpeg" },
-              { id: "jpeg-compressor", opts: { variant: "client-proof", quality, maxLongEdge } },
-              {
-                id: "jpeg-compressor",
-                opts: { variant: "gallery-thumb", quality: 78, maxLongEdge: 640, maxSizeMB: 0.25 },
-              },
+              pp.rawToJpeg(),
+              pp.jpegCompressor({ variant: "client-proof", quality, maxLongEdge }),
+              pp.jpegCompressor({
+                variant: "gallery-thumb",
+                quality: 78,
+                maxLongEdge: 640,
+                maxSizeMB: 0.25,
+              }),
             ],
           },
           {
             id: "video",
-            supports: (f: any) => f.type?.startsWith("video/"),
-            plugins: [{ id: "video-poster" }],
+            plugins: [pp.videoPoster()],
           },
         ],
       },
     ],
-    [quality, maxLongEdge],
+    [pp, quality, maxLongEdge],
   );
 
   const {
@@ -129,19 +130,15 @@ function WeddingUploader() {
     getFileInputProps,
     getFolderInputProps,
   } = useMediaUpload({
-    plugins: registry, // ← plugin registry
-    pipeline: pipelines, // ← pipeline defs with plugin refs and overrides
+    plugins: pp.plugins, // ← for plugin preloading
+    pipeline: pipelines, // ← pipeline defs with typed refs
     pipelineConfig: {
       debug: false,
-    },
-    tuning: {
-      maxConcurrency: 3,
     },
     maxNumberOfFiles: 200,
     tuning: {
       maxConcurrency: 3, // Limit simultaneous processing (auto-detected by default)
     },
-    maxNumberOfFiles: 200,
     onInfo: (msg) => console.log("[upupload]", msg),
     onWarning: (msg) => showToast(msg, "warning"),
     onError: (err, ctx) => {
@@ -194,13 +191,13 @@ function WeddingUploader() {
             value={String(maxLongEdge)}
             onChange={(e) => {
               const v = e.target.value;
-              setMaxLongEdge(v === "original" ? "original" : Number(v));
+              setMaxLongEdge(v === "-1" ? -1 : Number(v));
             }}
           >
+            <option value={-1}>Original size</option>
             <option value={1920}>1920px (HD)</option>
             <option value={2560}>2560px (QHD)</option>
             <option value={3840}>3840px (4K)</option>
-            <option value="original">Original size</option>
           </select>
         </label>
       </div>
@@ -275,7 +272,7 @@ No original files are stored — the server never sees the RAW/HEIC originals.
 
 ### How RAW Decoding Works (Client-Side)
 
-The `createRawToJpegPlugin()` acts as a **pure decoder** — it uses **LibRaw compiled to WebAssembly** running in the photographer's browser:
+The `rawToJpeg` plugin acts as a **pure decoder** — it uses **LibRaw compiled to WebAssembly** running in the photographer's browser:
 
 1. The RAW file (e.g., `photo.cr3`) is read as an `ArrayBuffer`.
 2. LibRaw WASM decodes it to an in-memory JPEG at the camera's full resolution.
@@ -283,12 +280,12 @@ The `createRawToJpegPlugin()` acts as a **pure decoder** — it uses **LibRaw co
 
 HEIC and TIFF files follow a similar path using `heic-decode`/`heic2any` and `utif` respectively.
 
-Each `{ id: "jpeg-compressor", opts }` reference in the pipeline reads the decoded JPEG from the shared context and applies the configured compression. Multiple compressor refs share the same single decode:
+Each `PluginProvider.jpegCompressor({...})` ref in the pipeline reads the decoded JPEG from the shared context and applies the configured compression. Multiple compressor refs share the same single decode:
 
 ```ts
-{ id: "raw-to-jpeg" },
-{ id: "jpeg-compressor", opts: { variant: "client-proof", quality, ... } },
-{ id: "jpeg-compressor", opts: { variant: "gallery-thumb", quality, ... } },
+pp.rawToJpeg(),
+pp.jpegCompressor({ variant: "client-proof" }),
+pp.jpegCompressor({ variant: "gallery-thumb", quality: 78, maxLongEdge: 640 }),
 ```
 
 ### Plugin Preloading
@@ -316,85 +313,88 @@ The original file is **always included** as artifact variant `"original"`. If yo
 
 ## One Decoder, Multiple Compressors
 
-RAW/HEIC/TIFF files are decoded **once** by `createRawToJpegPlugin()`, which places the result in the shared pipeline context. Each `{ id: "jpeg-compressor", opts }` reference in the pipeline produces one compressed variant from that shared decode.
+RAW/HEIC/TIFF files are decoded **once** by `rawToJpeg`, which places the result in the shared pipeline context. Each `PluginProvider.jpegCompressor({...})` ref produces one compressed variant from that shared decode.
 
 ```ts
-const registry = [createRawToJpegPlugin(), createJpegCompressorPlugin({ quality: 80, ... })];
+const pp = new PluginProvider([
+  rawToJpeg,
+  jpegCompressor.with({ quality: 80, maxLongEdge: 1920, maxSizeMB: 1 }),
+]);
 
-const pipelines: PipelineDef[] = [{
-  id: "media",
-  supports: () => true,
-  plugins: [
-    { id: "raw-to-jpeg" },
-    { id: "jpeg-compressor", opts: { variant: "web-gallery", quality: 85, ... } },
-    { id: "jpeg-compressor", opts: { variant: "4k-archive", quality: 92, ... } },
-    { id: "jpeg-compressor", opts: { variant: "thumbnail", quality: 78, ... } },
-  ],
-}];
+const pipelines: PipelineDef[] = [
+  {
+    id: "media",
+    plugins: [
+      pp.rawToJpeg(),
+      pp.jpegCompressor({ variant: "web-gallery", quality: 85 }),
+      pp.jpegCompressor({ variant: "4k-archive", quality: 92, maxLongEdge: 3840 }),
+      pp.jpegCompressor({ variant: "thumbnail", quality: 78, maxLongEdge: 640, maxSizeMB: 0.25 }),
+    ],
+  },
+];
 ```
 
-Each compressor reference can override `quality`, `maxLongEdge`, and `maxSizeMB` independently.
+Each compressor reference can override `variant`, `quality`, `maxLongEdge`, and `maxSizeMB` independently. Any omitted field falls through to the registry defaults.
 
 ## Per-Type Pipeline Definitions
 
-For larger applications you can define **multiple pipeline definitions** — each handling a specific file type — via the `pipeline` option. Each definition pairs a `supports()` classifier with its own set of plugins. Pipelines are **recursive**: a parent pipeline can contain sub-pipelines, forming a routing tree.
+For larger applications you can define **multiple pipeline definitions** — each handling a specific file type — via the `pipeline` option. Each definition pairs an optional `supports()` classifier with its own set of plugins. Pipelines are **recursive**: a parent pipeline can contain sub-pipelines, forming a routing tree.
+
+The `supports()` classifier on a pipeline is optional. When omitted, the pipeline matches all files; filtering happens at the plugin level via each plugin's own `supports()` method.
 
 ```ts
+import { PluginProvider, type PipelineDef } from "@vivsh1999/upupload/browser";
 import {
   isCameraRawImage,
   isVideoLike,
   isAudioLike,
-  type PipelineDef,
 } from "@vivsh1999/upupload/browser";
 
-// Plugin registry — factories define defaults only
-const registry = [
-  createRawToJpegPlugin(),
-  createJpegCompressorPlugin({ quality: 80, maxLongEdge: 1920, maxSizeMB: 1 }),
-  createVideoPosterPlugin({ variant: "poster" }),
-];
+// PluginProvider — plugins with defaults, fully typed
+const pp = new PluginProvider([
+  rawToJpeg,
+  jpegCompressor.with({ quality: 80, maxLongEdge: 1920, maxSizeMB: 1 }),
+  videoPoster.with({ maxEdge: 640 }),
+]);
 
-// Pipeline definitions — reference plugins by ID with overrides
+// Pipeline definitions — use typed PluginProvider methods
 const pipelines: PipelineDef[] = [
   {
     id: "media",
-    supports: () => true,
     pipelines: [
       {
         id: "raw-photo",
         supports: (f) => isCameraRawImage(f),
         plugins: [
-          { id: "raw-to-jpeg" },
-          { id: "jpeg-compressor", opts: { variant: "client-proof", quality: 85, maxLongEdge: 2560 } },
+          pp.rawToJpeg(),
+          pp.jpegCompressor({ variant: "client-proof", quality: 85, maxLongEdge: 2560 }),
         ],
       },
       {
         id: "raster-photo",
         supports: (f) => !isCameraRawImage(f) && !isVideoLike(f) && !isAudioLike(f),
         plugins: [
-          { id: "jpeg-compressor", opts: { variant: "client-proof", quality: 85, maxLongEdge: 2560 } },
+          pp.jpegCompressor({ variant: "client-proof", quality: 85, maxLongEdge: 2560 }),
         ],
       },
       {
         id: "video",
-        supports: (f) => isVideoLike(f),
-        plugins: [{ id: "video-poster" }],
+        // supports omitted — matches all files, videoPoster.supports() filters
+        plugins: [pp.videoPoster()],
       },
     ],
   },
 ];
 
 // Pass both:
-useMediaUpload({ plugins: registry, pipeline: pipelines, ... });
+useMediaUpload({ plugins: pp.plugins, pipeline: pipelines, ... });
 ```
 
-The router descends recursively. When a pipeline references `{ id: "jpeg-compressor", opts: {...} }`, the plugin is looked up in the registry and its options are merged with the overrides. Common stages (`validate-allowlist`, `original`) are always included automatically.
+The router descends recursively. Each `TypedPluginRef` carries the source plugin in `.defaults`, so the resolver can find it without a separate registry lookup. Options are merged with registry defaults — any field not specified in the ref falls through to the defaults set in the `PluginProvider`. Common stages (`validate-allowlist`, `original`) are always included automatically.
 
 ## Nestable Pipeline Factory
 
-For full control, use `Pipeline()` — a callback-based factory that receives the pipeline context and the source input, and returns stages. Pipelines are **nestable**: sub-pipelines are inlined at runtime, sharing the same context.
-
-For full control, use `Pipeline()` from `@vivsh1999/upupload/core` — a callback-based factory that receives pipeline context and the source input, and returns stages or nested sub-pipelines. Run it with `runPipelineFrom`.
+For full control, use `Pipeline()` from `@vivsh1999/upupload/core` — a callback-based factory that receives pipeline context and the source input, and returns stages or nested sub-pipelines. Pipelines are **nestable**: sub-pipelines are inlined at runtime, sharing the same context. Run it with `runPipelineFrom`.
 
 ```ts
 import { Pipeline, runPipelineFrom } from "@vivsh1999/upupload/core";
@@ -402,7 +402,6 @@ import { Pipeline, runPipelineFrom } from "@vivsh1999/upupload/core";
 const pipeline = Pipeline((ctx, source) => [
   {
     id: "classify",
-    when: () => ({ run: true }) as const,
     run: async (input, ctx) => {
       const isVideo = input.type?.startsWith("video/");
       ctx.shared.set("isVideo", isVideo);

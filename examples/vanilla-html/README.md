@@ -18,6 +18,8 @@ Plain `<script type="module">` using **`@vivsh1999/upupload/browser`** (no React
 
 3. Open `http://localhost:4174/`, pick a file, use **Run pipeline only** or **Run pipeline + TUS upload**.
 
+> **Note:** The `transport` and `tus` options were removed from `useMediaUpload`. Pipeline processing produces artifact blobs — you handle upload yourself (TUS, fetch, etc.) in the `onFileComplete` callback.
+
 ## Build
 
 ```bash

@@ -1,7 +1,7 @@
 /** @module preset */
 import { runDefaultBrowserPipeline } from "../browser/pipeline";
-import { createJpegCompressorPlugin } from "../plugin/jpeg-compressor";
-import { createRawToJpegPlugin } from "../plugin/raw-to-jpeg";
+import { jpegCompressor } from "../plugin/jpeg-compressor";
+import { rawToJpeg } from "../plugin/raw-to-jpeg";
 import type { PipelineResult } from "../core/types";
 
 export interface UploadOptions {
@@ -44,9 +44,15 @@ export async function upload(file: File, options?: UploadOptions): Promise<Pipel
   const maxLongEdge = options?.maxLongEdge ?? 3840;
   const maxSizeMB = options?.optimizedMaxSizeMB ?? 1;
 
+  const maxEdge = maxLongEdge === "original" ? -1 : maxLongEdge;
   const plugins = [
-    createRawToJpegPlugin(),
-    createJpegCompressorPlugin({ variant: "optimized", quality: q, maxLongEdge, maxSizeMB }),
+    rawToJpeg,
+    jpegCompressor.with({
+      variant: "optimized",
+      quality: q,
+      maxLongEdge: maxEdge,
+      maxSizeMB,
+    }),
   ];
 
   const result = await runDefaultBrowserPipeline(

@@ -66,8 +66,10 @@ async function executeStage<I extends PipelineSource, O extends PipelineResult>(
   startIndex: number,
   totalStages: number,
   options: PipelineOptions | undefined,
+  current?: PipelineResult,
 ): Promise<{ result: O; skipped: boolean }> {
-  const decision = await stage.when(source, ctx, initialResult() as O);
+  const guard = stage.when ?? (() => ({ run: true }) as const);
+  const decision = await guard(source, ctx, (current ?? initialResult()) as O);
   if (!decision.run) {
     if (decision.reason) {
       log("debug", `Stage "${stage.id}" skipped: ${decision.reason}`, decision.code);
@@ -250,7 +252,9 @@ export async function runPipeline(
 
       if (batch.length > 0) {
         const results = await Promise.all(
-          batch.map((s) => executeStage(s, source, ctx, log, batchStartIndex, total, options)),
+          batch.map((s) =>
+            executeStage(s, source, ctx, log, batchStartIndex, total, options, current),
+          ),
         );
 
         for (const { result, skipped } of results) {
@@ -267,7 +271,16 @@ export async function runPipeline(
       }
     } else {
       // 6. Run single stage
-      const { result, skipped } = await executeStage(stage, source, ctx, log, i, total, options);
+      const { result, skipped } = await executeStage(
+        stage,
+        source,
+        ctx,
+        log,
+        i,
+        total,
+        options,
+        current,
+      );
       i++;
 
       if (!skipped) mergeResult(current, result);
