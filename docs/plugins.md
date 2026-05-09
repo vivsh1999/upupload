@@ -1,102 +1,112 @@
 # Plugin Architecture
 
-## `ProcessingPlugin` Interface
+## `Plugin` Class
+
+Use the `Plugin` class — the single canonical way to create plugins:
 
 ```ts
-interface ProcessingPlugin<TOpts = Record<string, unknown>> {
-  readonly id: string;
-  readonly name: string;
-  supports(file: { name: string; type?: string | null }): boolean;
-  createStages(
-    input: PipelineSource,
-    opts: TOpts, // Typed — no cast needed
-    classif: FileClassification,
-    ctx: PipelineContext, // Logger + shared bag + AbortSignal
-  ): PipelineStage<PipelineSource, PipelineResult>[];
+import { Plugin } from "@vivsh1999/upupload/plugins";
+import { emptyResult, artifact } from "@vivsh1999/upupload/core";
+
+const watermark = new Plugin<{ opacity: number }>({
+  id: "watermark",
+  name: "Watermark Plugin",
+  options: { opacity: 0.5 },
+  supports: (file) => file.type?.startsWith("image/") ?? false,
+
+  // run shorthand — no need for createStages/array wrapping:
+  run: async (input, opts, classif, ctx) => {
+    // opts.opacity is typed
+    // classif.stemName, classif.ext, etc. available directly
+    // ctx.shared.get/set for inter-stage communication
+    // ctx.log for structured logging
+    // ctx.signal for cancellation
+    return emptyResult();
+  },
+
+  // Declare keys this plugin writes to shared context
+  sharedKeys: { output: "watermark:output" },
 
   // Ordering constraints — plugins are topologically sorted
-  after?: string[]; // Must run after these plugin IDs
-  before?: string[]; // Must run before these plugin IDs
-
-  preload?(): void;
-}
-```
-
-- `supports()` — quick classifier, determines if this plugin handles a file
-- `createStages()` — returns pipeline stages for a matched file. The `opts` parameter is fully typed via the generic. `ctx.shared` enables inter-stage communication. `ctx.log` provides structured logging. `ctx.signal` enables cancellation.
-- `after` / `before` — declare ordering constraints relative to other plugins. The pipeline topologically sorts plugins before inserting their stages.
-- `preload()` — optional, pre-warms decoders/WASM modules. Called at most once per plugin per `preloadBrowserPipelineForFiles` call
-
-## `FileClassification`
-
-```ts
-interface FileClassification {
-  ext: string;
-  mime: string;
-  stemName: string;
-  isVideo: boolean;
-  isAudio: boolean;
-  isSvg: boolean;
-  size: number; // File size in bytes
-  lastModified: number; // Last modified timestamp (ms since epoch)
-  meta?: Record<string, unknown>; // Optional custom metadata bag
-}
-```
-
-## Import Patterns
-
-```ts
-// Barrel — imports both plugins
-import { createJpegCompressorPlugin, createRawToJpegPlugin } from "@vivsh1999/upupload/plugins";
-
-// Individual — only what you use (tree-shaking)
-import { createJpegCompressorPlugin } from "@vivsh1999/upupload/plugins/jpeg-compressor";
-```
-
-## Usage Patterns
-
-```ts
-// No plugins — only built-in stages
-runDefaultBrowserPipeline(source, opts);
-
-// Only JPEG/PNG/WebP compression (no RAW)
-runDefaultBrowserPipeline(source, opts, {
-  plugins: [createJpegCompressorPlugin()],
+  after: ["raw-to-jpeg"], // Must run after these plugin IDs
+  before: [], // Must run before these plugin IDs
 });
+```
 
-// With cancellation signal
-const controller = new AbortController();
-runDefaultBrowserPipeline(source, opts, {
-  plugins: [createJpegCompressorPlugin()],
-  signal: controller.signal,
+When you need to embed multiple stages per plugin, use the `createStages` config (the `run` shorthand is an auto-wrap around `createStages` returning a single-element array):
+
+```ts
+new Plugin({
+  createStages: (input, opts, classif, ctx) => [
+    { id: "stage-1", run: async () => { ... } },
+    { id: "stage-2", run: async () => { ... } },
+  ],
 });
+```
 
-// React hook
-useMediaUpload({ plugins: [createJpegCompressorPlugin()] });
+## Result Helpers
+
+To eliminate boilerplate, use the built-in result builders from `@vivsh1999/upupload/core`:
+
+```ts
+import { emptyResult, artifact, warning, infoMessage } from "@vivsh1999/upupload/core";
+
+// Instead of: { artifacts: [], info: [], removeFromQueue: false }
+return emptyResult();
+
+// Instead of: { variant: "thumb", file: blob, filename: "x.jpg", filetype: "image/jpeg" }
+return artifact("thumb", blob, "x.jpg", "image/jpeg");
+
+// Instead of: { level: "warn", message: "Failed", code: "err" }
+return warning("Failed", "err");
+
+// Instead of: { level: "info", message: "Done", code: "ok" }
+return infoMessage("Done", "ok");
 ```
 
 ## Built-in Plugins
 
-### `createJpegCompressorPlugin()`
+### `jpegCompressor`
 
-**Import:** `@vivsh1999/upupload/plugins/jpeg-compressor`
+**Import:** `@vivsh1999/upupload/plugins` or `@vivsh1999/upupload/plugins/jpeg-compressor`
 
 Handles standard raster images (JPEG, PNG, WebP, BMP, GIF, AVIF).
 
-- Compresses the image via `browser-image-compression` to produce `optimized` and `thumbnail` JPEG artifacts
-- Does NOT handle RAW/HEIC/TIFF — use `createRawToJpegPlugin()` for those
+- Each `.with()` instance produces **one output variant** (configured by `variant`). Add multiple instances for multiple sizes:
+  ```ts
+  jpegCompressor.with(
+    { variant: "optimized", quality: 80, maxLongEdge: 2560, maxSizeMB: 1 },
+    { instanceId: "opt" },
+  );
+  jpegCompressor.with(
+    { variant: "thumbnail", quality: 78, maxLongEdge: 320, maxSizeMB: 0.25 },
+    { instanceId: "thumb" },
+  );
+  ```
+- If a previous plugin placed a decoded file in shared context (`pipeline:current`), the compressor operates on that instead of the original.
+- `quality` and `maxSizeMB` are required; `variant` defaults to `"outputFile"`, `maxLongEdge` defaults to `-1` (original size).
+- Does NOT handle RAW/HEIC/TIFF — use `rawToJpeg` for those
 - **Dep:** `browser-image-compression` (install separately)
 
-### `createRawToJpegPlugin()`
+### `rawToJpeg`
 
-**Import:** `@vivsh1999/upupload/plugins/raw-to-jpeg`
+**Import:** `@vivsh1999/upupload/plugins` or `@vivsh1999/upupload/plugins/raw-to-jpeg`
 
 Handles camera RAW (CR3, DNG, NEF, ARW, etc.), HEIC/HEIF, and TIFF files.
 
-- Decodes to a raster JPEG using LibRaw WASM / heic-decode / utif
-- Compresses the decoded image via `browser-image-compression` to produce `optimized` and `thumbnail` JPEG artifacts
-- Shares decode cache between optimized and thumbnail stages (decodes RAW once)
+- Pure decoder — produces no artifact. Places the decoded JPEG in the shared pipeline context.
+- Downstream `jpegCompressor.with()` instances read the decoded file from shared context.
+- Shares single decode across multiple compressor variants.
 - **Deps:** `libraw-wasm` (required), `heic-decode`/`heic2any`/`utif` (optional)
+
+### `videoPoster`
+
+**Import:** `@vivsh1999/upupload/plugins` or `@vivsh1999/upupload/plugins/video-poster`
+
+Extracts a JPEG poster frame from video files.
+
+- Also updates `pipeline:current` for downstream plugins that chain on it.
+- **No external deps.**
 
 ### Tree-shaking
 
@@ -107,90 +117,165 @@ Neither plugin is included in your bundle unless you explicitly import its sub-p
 import { runDefaultBrowserPipeline } from "@vivsh1999/upupload/browser";
 
 // ✓ 4 kB added — only jpeg-compressor code
-import { createJpegCompressorPlugin } from "@vivsh1999/upupload/plugins/jpeg-compressor";
+import { jpegCompressor } from "@vivsh1999/upupload/plugins/jpeg-compressor";
 
 // ✓ 12 kB added — only raw-to-jpeg code
-import { createRawToJpegPlugin } from "@vivsh1999/upupload/plugins/raw-to-jpeg";
+import { rawToJpeg } from "@vivsh1999/upupload/plugins/raw-to-jpeg";
 ```
 
-## Writing a Custom Plugin
-
-Create an object matching `ProcessingPlugin<TOpts>`. Use `definePlugin()` for less boilerplate:
+## Import Patterns
 
 ```ts
-import { definePlugin } from "@vivsh1999/upupload";
-import { stage } from "@vivsh1999/upupload/core";
+// Barrel — imports everything
+import { jpegCompressor, rawToJpeg, videoPoster } from "@vivsh1999/upupload/plugins";
 
-const watermark = definePlugin("watermark", {
-  name: "Watermark Plugin",
-  supports: (file) => file.type?.startsWith("image/") ?? false,
-  stages: (input, opts, classif, ctx) => [
-    stage("apply-watermark", async () => {
-      const img = new Image();
-      const url = URL.createObjectURL(input.file);
-      // ... apply watermark ...
-      URL.revokeObjectURL(url);
-      return {
-        artifacts: [
-          {
-            variant: "watermarked",
-            file: outputFile,
-            filename: outputFile.name,
-            filetype: "image/jpeg",
-          },
-        ],
-        info: [],
-        removeFromQueue: false,
-      };
-    }),
+// Individual — only what you use (tree-shaking)
+import { jpegCompressor } from "@vivsh1999/upupload/plugins/jpeg-compressor";
+import { rawToJpeg } from "@vivsh1999/upupload/plugins/raw-to-jpeg";
+import { videoPoster } from "@vivsh1999/upupload/plugins/video-poster";
+```
+
+## Usage Patterns
+
+```ts
+// .with() pattern — every plugin uses it:
+jpegCompressor.with({ quality: 80, maxSizeMB: 1 });
+
+// Multi-instance with unique IDs (no duplicate warnings):
+jpegCompressor.with({ variant: "optimized" }, { instanceId: "opt" });
+jpegCompressor.with({ variant: "thumbnail" }, { instanceId: "thumb" });
+
+// No plugins — only built-in stages
+runDefaultBrowserPipeline(source, opts);
+
+// Only JPEG/PNG/WebP compression:
+runDefaultBrowserPipeline(source, opts, {
+  plugins: [jpegCompressor.with({ quality: 80, maxSizeMB: 1 })],
+});
+
+// With pipeline definitions (per-type routing):
+runDefaultBrowserPipeline(source, opts, {
+  pipeline: [
+    {
+      id: "photos",
+      plugins: [jpegCompressor.with({ variant: "optimized", quality: 80, maxSizeMB: 1 })],
+    },
+  ],
+});
+
+// With cancellation signal:
+const controller = new AbortController();
+runDefaultBrowserPipeline(source, opts, {
+  plugins: [jpegCompressor.with({ quality: 80, maxSizeMB: 1 })],
+  signal: controller.signal,
+});
+
+// React hook:
+useMediaUpload({ plugins: [jpegCompressor.with({ quality: 80, maxSizeMB: 1 })] });
+
+// React hook with pipeline definitions and typed PluginProvider:
+const pp = new PluginProvider([rawToJpeg, jpegCompressor.with({ quality: 80, maxSizeMB: 1 })]);
+useMediaUpload({
+  plugins: pp.plugins,
+  pipeline: [
+    {
+      id: "photos",
+      plugins: [pp.jpegCompressor({ variant: "client-proof", quality: 85 })],
+    },
   ],
 });
 ```
 
-Or write the full interface directly:
+## Writing a Custom Plugin
+
+### Using the `run` Shorthand (Recommended)
 
 ```ts
-import type { ProcessingPlugin } from "@vivsh1999/upupload";
-import type { DefaultBrowserPipelineOptions } from "@vivsh1999/upupload/browser";
+import { Plugin } from "@vivsh1999/upupload/plugins";
+import { emptyResult, artifact, warning } from "@vivsh1999/upupload/core";
+import { PIPELINE_CURRENT_KEY } from "@vivsh1999/upupload/browser";
 
-const metadataPlugin: ProcessingPlugin<DefaultBrowserPipelineOptions> = {
-  id: "metadata-annotator",
-  name: "Metadata Annotator Plugin",
-  supports(file) {
-    return (file.type ?? "").startsWith("image/");
+const myPlugin = new Plugin<{ quality: number }>({
+  id: "my-plugin",
+  name: "My Plugin",
+  options: { quality: 80 },
+  supports: (file) => (file.type ?? "").startsWith("image/"),
+  run: async (input, opts, classif, ctx) => {
+    const sourceFile = (ctx.shared.get(PIPELINE_CURRENT_KEY) as File | undefined) ?? input.file;
+    // opts.quality is typed as number
+    // classif.stemName, classif.ext, etc. available without closure
+    return artifact("output", sourceFile, `${classif.stemName}.out.jpg`, "image/jpeg");
   },
-  createStages(input, opts, classif, ctx) {
-    return [
-      {
-        id: "read-metadata",
-        when: () => ({ run: true }),
-        run: async () => {
-          ctx.log("info", `${input.name}: ${classif.ext}`);
-          ctx.shared.set("detected-type", classif.mime);
-          return {
-            artifacts: [],
-            info: [{ level: "info", message: classif.mime, code: "mime" }],
-            removeFromQueue: false,
-          };
-        },
-      },
-    ];
-  },
-};
+  sharedKeys: { output: "my-plugin:processed" },
+});
 ```
 
-See `examples/vanilla-html/custom-pipeline.js` for a complete working example.
-
-## `preloadBrowserPipelineForFiles`
+### Using `createStages` (Multi-Stage)
 
 ```ts
-import { preloadBrowserPipelineForFiles } from "@vivsh1999/upupload/browser";
+new Plugin({
+  id: "my-plugin",
+  run: ..., // single stage
+  // OR
+  createStages: (input, opts, classif, ctx) => [
+    { id: "stage-1", run: async () => { ... } },
+    { id: "stage-2", run: async () => { ... } },
+  ],
+});
+```
 
-preloadBrowserPipelineForFiles(
-  fileList,
-  { saveOptimized: true, saveThumbnails: true },
-  { plugins: [createJpegCompressorPlugin()] },
-);
+### Using `instanceId` for Multi-Instance
+
+When you `.with()` the same plugin multiple times, give each instance a unique ID to avoid duplicate warnings:
+
+```ts
+const highQuality = myPlugin.with({ quality: 95 }, { instanceId: "hq" });
+const lowQuality = myPlugin.with({ quality: 60 }, { instanceId: "lq" });
+```
+
+### Browser Utilities
+
+For audio plugins, use the shared `AudioContext` pool and built-in WAV conversion:
+
+```ts
+import { acquireAudioContext, audioBufferToWav } from "@vivsh1999/upupload/browser";
+
+const { ctx: audioCtx, release } = acquireAudioContext();
+try {
+  const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
+  // ... process audioBuf ...
+  const wavBlob = audioBufferToWav(rendered);
+} finally {
+  release();
+}
+```
+
+For canvas rendering with cross-browser support:
+
+```ts
+import { createCanvas } from "@vivsh1999/upupload/browser";
+
+const { getContext, toBlob } = createCanvas(1200, 320);
+const cctx = getContext()!;
+// ... draw ...
+const blob = await toBlob("image/png");
+```
+
+### Shared Context Keys
+
+Plugins communicate via `ctx.shared`. The `pipeline:current` key holds the current working file:
+
+```ts
+import { PIPELINE_CURRENT_KEY, PIPELINE_CLASSIF_KEY } from "@vivsh1999/upupload/browser";
+
+// Read current file:
+const file = (ctx.shared.get(PIPELINE_CURRENT_KEY) as File | undefined) ?? input.file;
+
+// Read file classification (also available via `classif` parameter):
+const classif = ctx.shared.get(PIPELINE_CLASSIF_KEY) as FileClassification;
+
+// Write processed file:
+ctx.shared.set(PIPELINE_CURRENT_KEY, processedFile);
 ```
 
 ## Plugin Test Utilities

@@ -55,6 +55,18 @@ export interface ProcessingPlugin<TOpts = Record<string, unknown>> {
    */
   before?: string[];
 
+  /**
+   * Shared context keys this plugin writes to.
+   * Allows downstream plugins to consume the data without hardcoded strings.
+   *
+   * @example
+   * ```ts
+   * const rawPlugin = rawToJpeg;
+   * ctx.shared.get(rawPlugin.sharedKeys.decoded);
+   * ```
+   */
+  readonly sharedKeys?: Readonly<Record<string, string>>;
+
   /** Optional: pre-warm decoders / WASM / etc for files handled by this plugin. */
   preload?(): void;
 }

@@ -132,6 +132,10 @@ The generic pipeline engine (`runPipeline`) executes ordered stages with:
 - **Progress events** — `PipelineOptions.onProgress` fires `start`/`end` per stage
 - **Retry on error** — error handler supports `{ action: "retry"; maxRetries; delayMs? }`
 - **Accumulated result in `when()`** — stage guards receive the current accumulated `PipelineResult`
+- **Parallel execution** — stages with `parallel: true` run concurrently in batches via `Promise.all`
+- **Dependency ordering** — stages declare `dependsOn` for explicit ordering constraints
+- **Group skipping** — stages belong to named `group`s; a stage can `skipGroup` to disable an entire phase
+- **Skip remaining** — `skipRemaining: true` halts all remaining stages
 
 ### Utilities
 
@@ -139,6 +143,11 @@ The generic pipeline engine (`runPipeline`) executes ordered stages with:
 compose(...defs); // Merge multiple pipeline definitions
 stage(s); // Wrap a single stage as a definition
 createTimingMiddleware(); // Log stage duration to ctx.log
+sharedGet(map, key); // Type-safe read from shared context
+sharedSet(map, key, value); // Type-safe write to shared context
+Pipeline(fn); // Nestable pipeline factory (callback-based)
+runPipelineFrom(source, factory); // Execute a Pipeline factory
+flattenPipeline(nodes, ctx, source); // Flatten nested pipelines into stages
 ```
 
 ## Plugin System (`src/plugin/`)
@@ -161,61 +170,78 @@ interface ProcessingPlugin<TOpts = Record<string, unknown>> {
 
 `FileClassification` now includes `size`, `lastModified`, and optional `meta` bag.
 
-### Plugin Factory Pattern
+### Plugin Class (Canonical Way)
 
 ```ts
-function createMyPlugin(): ProcessingPlugin<Record<string, never>> {
-  return {
-    id: "my-plugin",
-    name: "My Plugin",
-    options: {},
-    supports(file) { /* return true/false */ },
-    createStages(input, opts, classif, ctx) {
-      // opts is fully typed — no cast
-      // ctx.shared: Map<string, unknown> — inter-plugin communication
-      // ctx.log(level, message, extra?) — structured logging
-      // ctx.signal?: AbortSignal — cancellation support
-      return [{ id: "my-stage", when: () => ({ run: true }), run: async () => { ... } }];
-    },
-  };
-}
+import { Plugin } from "@vivsh1999/upupload/plugins";
+import { emptyResult } from "@vivsh1999/upupload/core";
+
+const myPlugin = new Plugin<{ quality: number }>({
+  id: "my-plugin",
+  name: "My Plugin",
+  options: { quality: 80 },
+  supports(file) {
+    /* return true/false */
+  },
+  // run shorthand — no manual createStages/array wrapping needed
+  run: async (input, opts, classif, ctx) => {
+    // opts is fully typed as { quality: number }
+    // classif.stemName, classif.ext, etc. available directly
+    // ctx.shared: Map<string, unknown> — inter-plugin communication
+    // ctx.log(level, message, extra?) — structured logging
+    // ctx.signal?: AbortSignal — cancellation support
+    return emptyResult();
+  },
+  // Declare shared context keys so downstream plugins can reference
+  // them via plugin.sharedKeys.* instead of hardcoded strings
+  sharedKeys: { output: "my-plugin:processed" },
+});
+
+// Create a variants with overridden options — no factory needed:
+const highQuality = myPlugin.with({ quality: 95 });
+
+// For multi-instance setups, use instanceId:
+const hq = myPlugin.with({ quality: 95 }, { instanceId: "hq" });
+const lq = myPlugin.with({ quality: 60 }, { instanceId: "lq" });
 ```
 
 ### Built-in Plugins
 
-| Factory                            | File type            | Import path                                   |
-| ---------------------------------- | -------------------- | --------------------------------------------- |
-| `createRawToJpegPlugin(opts)`      | RAW/HEIC/TIFF → JPEG | `@vivsh1999/upupload/plugins/raw-to-jpeg`     |
-| `createJpegCompressorPlugin(opts)` | JPEG/PNG/WebP → JPEG | `@vivsh1999/upupload/plugins/jpeg-compressor` |
-| `createVideoPosterPlugin(opts)`    | Video → JPEG poster  | `@vivsh1999/upupload/plugins/video-poster`    |
+| Base instance    | File type            | Import path                                   |
+| ---------------- | -------------------- | --------------------------------------------- |
+| `rawToJpeg`      | RAW/HEIC/TIFF → JPEG | `@vivsh1999/upupload/plugins/raw-to-jpeg`     |
+| `jpegCompressor` | JPEG/PNG/WebP → JPEG | `@vivsh1999/upupload/plugins/jpeg-compressor` |
+| `videoPoster`    | Video → JPEG poster  | `@vivsh1999/upupload/plugins/video-poster`    |
 
-`createRawToJpegPlugin` is a pure decoder — it decodes RAW/HEIC/TIFF to JPEG and places the result in the shared pipeline context. It produces no artifact.
-
-`createJpegCompressorPlugin` reads the decoded file from shared context (if available) and compresses it into the configured variant. Register with defaults, then reference with overrides in a {@link PipelineDef}:
+Each built-in plugin also exports a base `Plugin` instance for the `.with()` pattern:
 
 ```ts
-// Plugin registry (init with defaults)
-const registry = [
-  createRawToJpegPlugin(),
-  createJpegCompressorPlugin({ quality: 80, maxLongEdge: 1920, maxSizeMB: 1 }),
-];
+import { rawToJpeg, jpegCompressor, videoPoster } from "@vivsh1999/upupload/plugins";
+```
 
-// Pipeline definitions reference by ID with overrides
-const pipelines = [
-  {
-    id: "photos",
-    supports: () => true,
-    plugins: [
-      { id: "raw-to-jpeg" },
-      { id: "jpeg-compressor", opts: { variant: "client-proof", quality: 85, maxLongEdge: 2560 } },
-      {
-        id: "jpeg-compressor",
-        opts: { variant: "thumbnail", quality: 78, maxLongEdge: 640, maxSizeMB: 0.25 },
-      },
-    ],
-  },
+`rawToJpeg` is a pure decoder — it decodes RAW/HEIC/TIFF to JPEG and places the result in the shared pipeline context. It produces no artifact.
+
+`jpegCompressor` reads the decoded file from shared context (if available) and compresses it into the configured variant. Register with defaults, then reference with overrides:
+
+```ts
+// Plugin registry (init with defaults via .with())
+const registry = [rawToJpeg, jpegCompressor.with({ quality: 80, maxLongEdge: 1920, maxSizeMB: 1 })];
+
+// Or with instanceId for multi-instance:
+const registry = [
+  rawToJpeg,
+  jpegCompressor.with(
+    { variant: "client-proof", quality: 85, maxLongEdge: 2560 },
+    { instanceId: "proof" },
+  ),
+  jpegCompressor.with(
+    { variant: "thumbnail", quality: 78, maxLongEdge: 640, maxSizeMB: 0.25 },
+    { instanceId: "thumb" },
+  ),
 ];
 ```
+
+> **Tip:** Published plugins use the `Plugin` class and the `.with()` pattern. Consumers write `plugin.with({ ... })` instead of factory functions.
 
 ### Writing a Custom Plugin
 
@@ -223,13 +249,21 @@ const pipelines = [
 const myPlugin: ProcessingPlugin<MyOpts> = {
   id: "my-plugin",
   name: "My Plugin",
-  supports(file) { /* return true/false */ },
-  createStages(input, opts, classif, ctx) {
-    // opts is typed as MyOpts
-    // ctx.shared lets you read/write inter-plugin state
-    // ctx.log for structured logging
-    return [{ id: "my-stage", when: () => ({ run: true }), run: async () => { ... } }];
+  options: {},
+  supports(file) {
+    /* return true/false */
   },
+  run: async (input, opts, classif, ctx) => {
+    // opts is typed as MyOpts
+    // classif.stemName, classif.ext available directly
+    // ctx.shared: Map<string, unknown> — inter-plugin communication
+    // ctx.log(level, message, extra?) — structured logging
+    // ctx.signal?: AbortSignal — cancellation support
+    return emptyResult();
+  },
+  // Declare shared context keys so downstream plugins can reference
+  // them via plugin.sharedKeys.* instead of hardcoded strings
+  sharedKeys: { output: "my-plugin:processed" },
 };
 ```
 
@@ -247,10 +281,12 @@ Key features:
 - **`file: File` on every queue item** — no more DOM queries
 - **`cancelUpload(fileId)` / `cancelAll()`** — aborts in-flight pipelines and uploads
 - **`isDragOver` state** — composable drag-and-drop with enter/leave counter
-- **`tuning.simultaneousUploads`** — concurrency-limited via `Semaphore`
+- **`tuning.maxConcurrency`** — concurrency-limited via `Semaphore` (auto-detected from CPU count)
 - **Preview URLs** — `previewUrl` and per-artifact `url` on queue items (auto-released)
 - **`startUpload(fileIds?)`** — selective processing of specific items
-- **No `xhr` transport** dead path — only `"tus"` and `"custom"`
+- **Artifact blobs** — each artifact carries a `blob: Blob` for upload or display
+- **`onFileComplete`** — receives the full queue item with artifacts
+- **Statuses**: `"idle" | "processing" | "complete" | "error"` (no built-in upload transport)
 - **`onWarning` wired** — error messages in queue trigger the callback
 
 ## Semaphore Utility
@@ -262,7 +298,7 @@ const sem = new Semaphore(4); // max 4 concurrent
 await sem.run(() => fetch(...));
 ```
 
-It is also used internally by `useMediaUpload` with `tuning.simultaneousUploads`.
+It is also used internally by `useMediaUpload` with `tuning.maxConcurrency`.
 
 ## File Locations
 
@@ -270,13 +306,15 @@ It is also used internally by `useMediaUpload` with `tuning.simultaneousUploads`
 
 - `src/core/types.ts` — All pipeline types
 - `src/core/runPipeline.ts` — Generic engine
+- `src/core/result.ts` — `emptyResult()`, `artifact()`, `warning()`, `infoMessage()` helpers
 - `src/core/utils.ts` — `compose`, `stage`, `createTimingMiddleware`
 - `src/core/index.ts` — Barrel
 
 ### Plugin
 
-- `src/plugin/types.ts` — `ProcessingPlugin<TOpts>`, `FileClassification`
-- `src/plugin/definePlugin.ts` — Factory shorthand
+- `src/plugin/types.ts` — `ProcessingPlugin<TOpts>`, `FileClassification`, `sharedKeys`
+- `src/plugin/plugin.ts` — `Plugin` class (canonical way to create plugins; supports `run` shorthand, `.with({}, { instanceId })`)
+- `src/plugin/definePlugin.ts` — Legacy shorthand (delegates to `Plugin`)
 - `src/plugin/raw-to-jpeg.ts` — RAW/HEIC/TIFF decoder plugin
 - `src/plugin/jpeg-compressor.ts` — JPEG/PNG/WebP compressor plugin
 - `src/plugin/video-poster.ts` — Video poster frame plugin
@@ -286,6 +324,13 @@ It is also used internally by `useMediaUpload` with `tuning.simultaneousUploads`
 - `src/plugin/index.ts` — Barrel
 
 ### Browser
+
+- `src/browser/pipeline.ts` — `runDefaultBrowserPipeline`, topological sort (with cycle detection)
+- `src/browser/pipeline-utils.ts` — `PipelineDef`, `PluginRef`, `PIPELINE_CURRENT_KEY`, `PIPELINE_CLASSIF_KEY`, `validatePipeline()`
+- `src/browser/audio.ts` — `audioBufferToWav()`, `acquireAudioContext()` (pooled), `isMediaRecorderSupported()`
+- `src/browser/canvas.ts` — `createCanvas()` (auto OffscreenCanvas fallback), `isOffscreenCanvasSupported()`
+- `src/browser/allowlist.ts` — File type classification
+- `src/browser/index.ts` — Barrel
 
 ### React
 

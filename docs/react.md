@@ -4,15 +4,12 @@
 
 ```tsx
 import { useMediaUpload } from "@vivsh1999/upupload/react";
-import { createJpegCompressorPlugin } from "@vivsh1999/upupload/plugins/jpeg-compressor";
+import { jpegCompressor } from "@vivsh1999/upupload/plugins";
 
 function Uploader() {
   const { getDropTargetProps, getFileInputProps, queue, startUpload, isDragOver, cancelUpload } =
     useMediaUpload({
-      plugins: [createJpegCompressorPlugin()],
-      transport: "tus",
-      tus: { endpoint: "/api/tus" },
-      // Generic metadata — each file gets an id
+      plugins: [jpegCompressor.with({ quality: 80, maxSizeMB: 1 })],
       getMeta: (file) => ({ uploadedAt: Date.now() }),
     });
 
@@ -39,18 +36,16 @@ function Uploader() {
 
 ```ts
 interface UseMediaUploadOptions<TMeta = void> {
-  initialConfig?: Partial<DefaultBrowserPipelineOptions>;
-  plugins?: ProcessingPlugin[];
-  transport?: "tus" | "custom";
-  tus?: TusUploadOptions;
-  uploadHandler?: MediaUploadCustomUploadHandler;
+  plugins?: ProcessingPlugin<any>[];
+  pipeline?: PipelineDef[];
+  pipelineConfig?: Partial<BrowserPipelineOptions>;
   maxNumberOfFiles?: number;
-  tuning?: MediaUploadTuningOptions; // { simultaneousUploads?: number }
-  getMeta?: (file: File) => TMeta; // Per-file metadata
+  tuning?: MediaUploadTuningOptions;
   onInfo?: (message: string) => void;
   onWarning?: (message: string) => void;
-  onError?: (error: Error, context?: MediaUploadCustomUploadContext) => void;
-  onFileComplete?: (fileName: string) => void;
+  onError?: (error: Error, context?: { fileName?: string }) => void;
+  onFileComplete?: (item: MediaUploadQueueItem<TMeta>) => void;
+  getMeta?: (file: File) => TMeta;
 }
 ```
 
@@ -58,16 +53,16 @@ interface UseMediaUploadOptions<TMeta = void> {
 
 ```ts
 interface UseMediaUploadResult<TMeta = void> {
-  config: DefaultBrowserPipelineOptions;
-  updateConfig: (patch: Partial<DefaultBrowserPipelineOptions>) => void;
+  config: BrowserPipelineOptions;
+  updateConfig: (patch: Partial<BrowserPipelineOptions>) => void;
   queue: MediaUploadQueueItem<TMeta>[];
-  startUpload: (fileIds?: string[]) => Promise<void>; // Selective processing
+  startUpload: (fileIds?: string[]) => Promise<void>;
   clear: () => void;
   retry: (fileId: string) => void;
-  cancelUpload: (fileId: string) => void; // Cancel one file
-  cancelAll: () => void; // Cancel everything
+  cancelUpload: (fileId: string) => void;
+  cancelAll: () => void;
   isBusy: boolean;
-  isDragOver: boolean; // Drag-and-drop visual state
+  isDragOver: boolean;
   getDropTargetProps: <T>(props?: T) => T & { onDrop; onDragOver; onDragEnter; onDragLeave };
   getFileInputProps: <T>(props?: T) => T & { type: "file"; multiple: true };
   getFolderInputProps: <T>(props?: T) => T & { type: "file"; multiple: true; webkitdirectory };
@@ -80,17 +75,17 @@ interface UseMediaUploadResult<TMeta = void> {
 interface MediaUploadQueueItem<TMeta = void> {
   id: string;
   name: string;
-  file: File; // Direct file reference
-  status: "idle" | "processing" | "uploading" | "error";
-  progress: number; // 0–100
+  file: File;
+  status: "idle" | "processing" | "complete" | "error";
+  progress: number;
   error?: string;
-  previewUrl?: string; // Auto-released on clear/cancel
-  meta?: TMeta; // From getMeta()
+  previewUrl?: string;
+  meta?: TMeta;
   artifacts?: {
     variant: string;
     filename: string;
-    progress: number;
-    url?: string; // Blob URL for preview
+    blob: Blob;
+    url?: string;
   }[];
 }
 ```
@@ -102,8 +97,8 @@ Built-in concurrency limiter. Available as a standalone utility:
 ```ts
 import { Semaphore } from "@vivsh1999/upupload/react";
 
-const sem = new Semaphore(4); // max 4 concurrent
+const sem = new Semaphore(4);
 await Promise.all(tasks.map((t) => sem.run(() => process(t))));
 ```
 
-The hook uses this internally with `tuning.simultaneousUploads` (default: 4).
+The hook uses this internally with `tuning.maxConcurrency` (default: auto-detected from CPU count).

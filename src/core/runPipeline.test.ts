@@ -25,7 +25,6 @@ describe("runPipeline", () => {
       stages: [
         {
           id: "a",
-          when: () => ({ run: true }),
           run: () => ({
             artifacts: [
               {
@@ -41,7 +40,6 @@ describe("runPipeline", () => {
         },
         {
           id: "b",
-          when: () => ({ run: true }),
           run: () => ({
             artifacts: [
               {
@@ -77,7 +75,6 @@ describe("runPipeline", () => {
         },
         {
           id: "run-me",
-          when: () => ({ run: true }),
           run: () => ({
             artifacts: [],
             info: [{ level: "info", message: "ok" }],
@@ -97,7 +94,6 @@ describe("runPipeline", () => {
       stages: [
         {
           id: "boom",
-          when: () => ({ run: true }),
           run: () => {
             throw new Error("pipeline failed");
           },
@@ -113,7 +109,6 @@ describe("runPipeline", () => {
       stages: [
         {
           id: "boom",
-          when: () => ({ run: true }),
           run: () => {
             throw new Error("fail");
           },
@@ -130,7 +125,6 @@ describe("runPipeline", () => {
       stages: [
         {
           id: "boom",
-          when: () => ({ run: true }),
           run: () => {
             throw new Error("fail");
           },
@@ -141,7 +135,6 @@ describe("runPipeline", () => {
         },
         {
           id: "next",
-          when: () => ({ run: true }),
           run: () => ({
             artifacts: [
               {
@@ -168,7 +161,6 @@ describe("runPipeline", () => {
       stages: [
         {
           id: "boom",
-          when: () => ({ run: true }),
           run: () => {
             throw new Error("fail");
           },
@@ -202,7 +194,6 @@ describe("runPipeline", () => {
       stages: [
         {
           id: "marks-remove",
-          when: () => ({ run: true }),
           run: () => ({
             artifacts: [],
             info: [],
@@ -211,7 +202,6 @@ describe("runPipeline", () => {
         },
         {
           id: "does-not-clear-flag",
-          when: () => ({ run: true }),
           run: () => ({
             artifacts: [],
             info: [],

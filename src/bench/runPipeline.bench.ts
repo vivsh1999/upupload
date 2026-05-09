@@ -34,7 +34,6 @@ describe("runPipeline", () => {
       const def: PipelineDefinition<PipelineSource, PipelineResult> = {
         stages: ["a", "b", "c", "d", "e", "f", "g"].map((id) => ({
           id,
-          when: () => ({ run: true }),
           run: async () => {
             await delay();
             return stageResult(id);
@@ -75,7 +74,6 @@ describe("runPipeline", () => {
         stages: [
           {
             id: "good",
-            when: () => ({ run: true }),
             run: async () => {
               await delay();
               return stageResult("good");
@@ -83,7 +81,6 @@ describe("runPipeline", () => {
           },
           {
             id: "bad",
-            when: () => ({ run: true }),
             run: async () => {
               await delay();
               throw new Error("stage failure");
@@ -95,7 +92,6 @@ describe("runPipeline", () => {
           },
           {
             id: "also-good",
-            when: () => ({ run: true }),
             run: async () => {
               await delay();
               return stageResult("also-good");
@@ -115,7 +111,6 @@ describe("runPipeline", () => {
         stages: [
           {
             id: "good",
-            when: () => ({ run: true }),
             run: async () => {
               await delay();
               return stageResult("good");
@@ -123,7 +118,6 @@ describe("runPipeline", () => {
           },
           {
             id: "skip-me",
-            when: () => ({ run: true }),
             run: async () => {
               await delay();
               throw new Error("skip this");
@@ -132,7 +126,6 @@ describe("runPipeline", () => {
           },
           {
             id: "also-good",
-            when: () => ({ run: true }),
             run: async () => {
               await delay();
               return stageResult("also-good");

@@ -1,8 +1,9 @@
 /** @module plugins/video-poster */
-import type { PipelineContext, PipelineResult, PipelineSource, PipelineStage } from "../core/types";
 import { fileExtensionLower, VIDEO_EXTENSIONS } from "../browser/allowlist";
 import { stem } from "../browser/pipeline-utils";
-import type { FileClassification, ProcessingPlugin } from "./types";
+import { Plugin } from "./plugin";
+import { emptyResult, warning, artifact } from "../core/result";
+import { PIPELINE_CURRENT_KEY } from "../browser/pipeline-utils";
 
 async function videoPosterFile(source: File, maxEdge: number): Promise<File | null> {
   const url = URL.createObjectURL(source);
@@ -47,84 +48,59 @@ async function videoPosterFile(source: File, maxEdge: number): Promise<File | nu
 }
 
 export interface VideoPosterPluginOptions {
-  /** Artifact variant name. Default: `"poster"`. */
   variant?: string;
-  /** Maximum long edge of the poster image. Default: `640`. */
   maxEdge?: number;
 }
 
 /**
- * Create a plugin that extracts a poster frame from video files.
- * No external dependencies — uses the browser Canvas API.
- *
- * @param opts - Variant name and max edge.
- * @returns A {@link ProcessingPlugin} configured for video inputs.
+ * Video poster frame extractor — base instance with defaults.
  *
  * @example
  * ```ts
- * const posterPlugin = createVideoPosterPlugin({ variant: "poster", maxEdge: 640 });
+ * videoPoster                                          // poster at 640px
+ * videoPoster.with({ variant: "thumb", maxEdge: 320 }) // smaller variant
  * ```
  */
+export const videoPoster = new Plugin<VideoPosterPluginOptions>({
+  id: "video-poster",
+  name: "Video Poster Plugin",
+  options: { variant: "poster", maxEdge: 640 },
+  supports: (file) => {
+    const ext = fileExtensionLower(file.name);
+    const mime = (file.type ?? "").toLowerCase();
+    return mime.startsWith("video/") || VIDEO_EXTENSIONS.has(ext);
+  },
+  run: async (input, pluginOpts, _classif, ctx) => {
+    // Follow the pipeline:current convention so downstream plugins can chain
+    const sourceFile = (ctx.shared.get(PIPELINE_CURRENT_KEY) as File | undefined) ?? input.file;
+    const poster = await videoPosterFile(sourceFile as File, pluginOpts.maxEdge ?? 640);
+    if (!poster) {
+      return {
+        artifacts: [],
+        info: [warning(`Could not generate a video poster for "${input.name}".`, "poster_failed")],
+        removeFromQueue: false,
+      };
+    }
+    ctx.shared.set(PIPELINE_CURRENT_KEY, poster);
+    return {
+      artifacts: [
+        artifact(
+          pluginOpts.variant ?? "poster",
+          poster,
+          poster.name,
+          poster.type || "application/octet-stream",
+          { relativePath: input.relativePath },
+        ),
+      ],
+      info: [],
+      removeFromQueue: false,
+    };
+  },
+});
+
+/** @deprecated Use `videoPoster.with(opts)` instead. */
 export function createVideoPosterPlugin(
   opts?: VideoPosterPluginOptions,
-): ProcessingPlugin<VideoPosterPluginOptions> {
-  const options: VideoPosterPluginOptions = {
-    variant: opts?.variant ?? "poster",
-    maxEdge: opts?.maxEdge ?? 640,
-  };
-
-  return {
-    id: "video-poster",
-    name: "Video Poster Plugin",
-    options,
-
-    supports(file: { name: string; type?: string | null }) {
-      const ext = fileExtensionLower(file.name);
-      const mime = (file.type ?? "").toLowerCase();
-      return mime.startsWith("video/") || VIDEO_EXTENSIONS.has(ext);
-    },
-
-    createStages(
-      input: PipelineSource,
-      pluginOpts: VideoPosterPluginOptions,
-      _classif: FileClassification,
-      _ctx: PipelineContext,
-    ): PipelineStage<PipelineSource, PipelineResult>[] {
-      return [
-        {
-          id: "extract-poster",
-          when: () => ({ run: true }),
-          run: async () => {
-            const poster = await videoPosterFile(input.file as File, pluginOpts.maxEdge ?? 640);
-            if (!poster) {
-              return {
-                artifacts: [],
-                info: [
-                  {
-                    level: "warn",
-                    message: `Could not generate a video poster for "${input.name}".`,
-                    code: "poster_failed",
-                  },
-                ],
-                removeFromQueue: false,
-              };
-            }
-            return {
-              artifacts: [
-                {
-                  variant: pluginOpts.variant ?? "poster",
-                  file: poster,
-                  filename: poster.name,
-                  filetype: poster.type || "application/octet-stream",
-                  relativePath: input.relativePath,
-                },
-              ],
-              info: [],
-              removeFromQueue: false,
-            };
-          },
-        },
-      ];
-    },
-  };
+): Plugin<VideoPosterPluginOptions> {
+  return videoPoster.with(opts ?? {});
 }

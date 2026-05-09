@@ -7,13 +7,20 @@ import {
   RAW_EXTENSIONS,
   VIDEO_EXTENSIONS,
 } from "./allowlist";
-import { info, resolvePipeline, stem } from "./pipeline-utils";
+import {
+  info,
+  PIPELINE_CURRENT_KEY,
+  PIPELINE_CLASSIF_KEY,
+  resolvePipeline,
+  stem,
+} from "./pipeline-utils";
 import type { BrowserPipelineOptions, PipelineDef } from "./pipeline-utils";
 import type { FileClassification, ProcessingPlugin } from "../plugin/types";
 
 export type { BrowserPipelineOptions, PipelineDef } from "./pipeline-utils";
 export {
   DEFAULT_BROWSER_PIPELINE_OPTIONS,
+  PIPELINE_CURRENT_KEY,
   resolvePipeline,
   toJpegName,
   toThumbName,
@@ -46,6 +53,51 @@ function topologicalSort(plugins: ProcessingPlugin<any>[]): ProcessingPlugin<any
     }
   }
 
+  // Cycle detection via DFS
+  const WHITE = 0,
+    GRAY = 1,
+    BLACK = 2;
+  const color = new Map<string, number>();
+  const parent = new Map<string, string | null>();
+  for (const id of byId.keys()) color.set(id, WHITE);
+
+  function dfs(u: string): string | null {
+    color.set(u, GRAY);
+    for (const v of adj.get(u) ?? []) {
+      if (!color.has(v)) color.set(v, WHITE);
+      if (color.get(v) === GRAY) {
+        return v; // found cycle back edge
+      }
+      if (color.get(v) === WHITE) {
+        parent.set(v, u);
+        const cycle = dfs(v);
+        if (cycle) return cycle;
+      }
+    }
+    color.set(u, BLACK);
+    return null;
+  }
+
+  for (const id of byId.keys()) {
+    if (color.get(id) === WHITE) {
+      const cycle = dfs(id);
+      if (cycle) {
+        // Reconstruct the cycle path
+        const path: string[] = [cycle];
+        let cur = parent.get(cycle);
+        while (cur && cur !== cycle) {
+          path.push(cur);
+          cur = parent.get(cur);
+        }
+        path.reverse();
+        throw new Error(
+          `Cycle detected in plugin ordering: ${path.join(" → ")}. ` +
+            "Check your plugins' `after` and `before` declarations.",
+        );
+      }
+    }
+  }
+
   const queue: string[] = [];
   for (const [id, deg] of inDegree) {
     if (deg === 0) queue.push(id);
@@ -64,6 +116,26 @@ function topologicalSort(plugins: ProcessingPlugin<any>[]): ProcessingPlugin<any
   }
 
   return sorted;
+}
+
+/**
+ * Check an array of resolved plugin instances for duplicate stage IDs.
+ * Throws if two plugins would produce stages with the same ID.
+ */
+function checkDuplicateStageIds(plugins: ProcessingPlugin<any>[]): void {
+  // We can't fully predict stage IDs without calling createStages, but we can
+  // detect cases where two plugins share the same id (common with .with() clones).
+  const seen = new Map<string, string>();
+  for (const p of plugins) {
+    if (seen.has(p.id)) {
+      const first = seen.get(p.id)!;
+      throw new Error(
+        `Duplicate plugin id "${p.id}" — both "${first}" and "${p.name}" produce the same ` +
+          `stage prefix. Use .with({...}, { instanceId: "unique-name" }) to disambiguate.`,
+      );
+    }
+    seen.set(p.id, p.name);
+  }
 }
 
 export async function runDefaultBrowserPipeline(
@@ -122,8 +194,10 @@ export async function runDefaultBrowserPipeline(
   };
 
   const ctx: PipelineContext = { log, shared: new Map(), signal };
+  ctx.shared.set(PIPELINE_CLASSIF_KEY, classif);
 
   const matchedPlugins = plugins.filter((p) => p.supports(input));
+  checkDuplicateStageIds(matchedPlugins);
   const sorted = topologicalSort(matchedPlugins);
 
   const pluginStages: PipelineStage<PipelineSource, PipelineResult>[] = [];
@@ -138,7 +212,6 @@ export async function runDefaultBrowserPipeline(
     stages: [
       {
         id: "validate-allowlist",
-        when: () => ({ run: true }),
         run: () => {
           if (mime.startsWith("video/") || mime.startsWith("audio/") || mime.startsWith("image/")) {
             // fast MIME path
@@ -171,20 +244,22 @@ export async function runDefaultBrowserPipeline(
       // Users who don't want it can filter it from the result.
       {
         id: "original",
-        when: () => ({ run: true }),
-        run: () => ({
-          artifacts: [
-            {
-              variant: "original",
-              file: input.file,
-              filename: input.name,
-              filetype: input.type || "application/octet-stream",
-              relativePath: input.relativePath,
-            },
-          ],
-          info: [],
-          removeFromQueue: false,
-        }),
+        run: () => {
+          ctx.shared.set(PIPELINE_CURRENT_KEY, input.file);
+          return {
+            artifacts: [
+              {
+                variant: "original",
+                file: input.file,
+                filename: input.name,
+                filetype: input.type || "application/octet-stream",
+                relativePath: input.relativePath,
+              },
+            ],
+            info: [],
+            removeFromQueue: false,
+          };
+        },
       },
 
       ...pluginStages,

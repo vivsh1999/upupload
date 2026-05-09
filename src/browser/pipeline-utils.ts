@@ -1,5 +1,44 @@
 import type { PipelineInfoMessage, PipelineSource } from "../core/types";
 import type { ProcessingPlugin } from "../plugin/types";
+import { Plugin } from "../plugin/plugin";
+
+// ---------------------------------------------------------------------------
+// Generic shared-context keys
+// ---------------------------------------------------------------------------
+
+/**
+ * Well-known shared context key for the "current working file".
+ *
+ * Every stage that processes a file should write its output to this key.
+ * Downstream stages that need the most recently processed file read from it.
+ * This allows plugins to chain generically without knowing each other's keys.
+ *
+ * @example
+ * ```ts
+ * // Upstream stage (e.g. raw-to-jpeg):
+ * ctx.shared.set(PIPELINE_CURRENT_KEY, decodedFile);
+ *
+ * // Downstream stage (e.g. watermark):
+ * const current = ctx.shared.get(PIPELINE_CURRENT_KEY) as File | undefined
+ *   ?? input.file;
+ * ```
+ */
+export const PIPELINE_CURRENT_KEY = "pipeline:current";
+
+/**
+ * Reserved shared context key for the file's {@link FileClassification}.
+ *
+ * The browser pipeline sets this before any plugin stages run, so that
+ * stage `run()` functions can access the classification without capturing
+ * it via closure in `createStages()`.
+ *
+ * @example
+ * ```ts
+ * const classif = ctx.shared.get(PIPELINE_CLASSIF_KEY) as FileClassification;
+ * console.log(classif.stemName, classif.ext);
+ * ```
+ */
+export const PIPELINE_CLASSIF_KEY = "pipeline:classif";
 
 // ---------------------------------------------------------------------------
 // Options type & defaults
@@ -29,17 +68,17 @@ export const DEFAULT_BROWSER_PIPELINE_OPTIONS: BrowserPipelineOptions = {
  *   {
  *     id: "raw-photo",
  *     supports: (f) => isCameraRawImage(f),
- *     plugins: [createRawToJpegPlugin(), createJpegCompressorPlugin(…)],
+ *     plugins: [rawToJpeg, jpegCompressor.with({ quality: 80 })],
  *   },
  *   {
  *     id: "raster-photo",
  *     supports: (f) => isSupportedMediaUpload(f) && !isCameraRawImage(f),
- *     plugins: [createJpegCompressorPlugin(…)],
+ *     plugins: [jpegCompressor.with({ quality: 80 })],
  *   },
  *   {
  *     id: "video",
  *     supports: (f) => isVideoLike(f),
- *     plugins: [createVideoPosterPlugin()],
+ *     plugins: [videoPoster],
  *   },
  * ];
  * ```
@@ -59,6 +98,11 @@ export interface PluginRef {
   id: string;
   /** Override options merged on top of the plugin's default options. */
   opts?: Record<string, unknown>;
+  /**
+   * Reference to the source plugin instance.
+   * Set automatically by {@link PluginProvider} — avoids registry lookup.
+   */
+  defaults?: ProcessingPlugin<any>;
 }
 
 /**
@@ -70,8 +114,12 @@ export type PipelinePlugin = ProcessingPlugin<any> | PluginRef;
 export interface PipelineDef {
   /** Unique identifier for this pipeline (used in logs & debugging). */
   id: string;
-  /** Classifier — does this pipeline handle this file? */
-  supports(file: PipelineSource): boolean;
+  /**
+   * Classifier — does this pipeline handle this file?
+   * When omitted, the pipeline matches all files. File filtering is then
+   * handled by each plugin's own `supports()` method.
+   */
+  supports?(file: PipelineSource): boolean;
   /**
    * Plugins to run for files matching this pipeline.
    * Each entry is either a concrete plugin instance or a reference
@@ -99,15 +147,10 @@ export function resolvePluginRefs(
   plugins: PipelinePlugin[],
   registry?: ProcessingPlugin<any>[],
 ): ProcessingPlugin<any>[] {
-  if (!registry) {
-    // No registry — assume everything is a bare instance
-    return plugins as ProcessingPlugin<any>[];
-  }
-
   return plugins.map((p) => {
     if (isPluginInstance(p)) return p;
 
-    const plugin = registry.find((r) => r.id === p.id);
+    const plugin = p.defaults ?? registry?.find((r) => r.id === p.id);
     if (!plugin) {
       throw new Error(
         `Plugin "${p.id}" referenced in pipeline but not found in the plugin registry. ` +
@@ -115,6 +158,7 @@ export function resolvePluginRefs(
       );
     }
     if (!p.opts || Object.keys(p.opts).length === 0) return plugin;
+    if (plugin instanceof Plugin) return plugin.with(p.opts as any);
     return { ...plugin, options: { ...plugin.options, ...p.opts } };
   });
 }
@@ -129,7 +173,7 @@ export function resolvePipeline(
   registry?: ProcessingPlugin<any>[],
 ): { def: PipelineDef; plugins: ProcessingPlugin<any>[] } | null {
   for (const def of pipelines) {
-    if (!def.supports(file)) continue;
+    if (def.supports && !def.supports(file)) continue;
     if (def.pipelines && def.pipelines.length > 0) {
       const child = resolvePipeline(def.pipelines, file, registry);
       if (child) return child;
@@ -169,4 +213,77 @@ export function info(
   code?: string,
 ): PipelineInfoMessage {
   return { level, message, code };
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline validation
+// ---------------------------------------------------------------------------
+
+export interface ValidationError {
+  path: string[];
+  message: string;
+}
+
+function collectPipelineIds(defs: PipelineDef[], path: string[], ids: Map<string, string[]>): void {
+  for (const def of defs) {
+    const fullPath = [...path, def.id];
+    const existing = ids.get(def.id);
+    if (existing) {
+      throw new Error(
+        `Duplicate pipeline id "${def.id}" at [${fullPath.join(", ")}] ` +
+          `— first defined at [${existing.join(", ")}]`,
+      );
+    }
+    ids.set(def.id, fullPath);
+    if (def.pipelines) {
+      collectPipelineIds(def.pipelines, fullPath, ids);
+    }
+  }
+}
+
+/**
+ * Validate an array of PipelineDefs for common configuration errors.
+ * Throws on the first validation error found.
+ *
+ * Checks performed:
+ * - No duplicate pipeline IDs at any level
+ * - No pipelines with both `plugins` and `pipelines` empty (dead branches)
+ * - Plugins array, when present, contains only valid entries
+ */
+export function validatePipeline(defs: PipelineDef[]): void {
+  const ids = new Map<string, string[]>();
+  collectPipelineIds(defs, [], ids);
+
+  function walk(defs: PipelineDef[], path: string[]): void {
+    for (const def of defs) {
+      const fullPath = [...path, def.id];
+      const hasPlugins = def.plugins !== undefined && def.plugins.length > 0;
+      const hasChildren = def.pipelines !== undefined && def.pipelines.length > 0;
+
+      if (!hasPlugins && !hasChildren) {
+        throw new Error(
+          `Pipeline "${def.id}" at [${fullPath.join(", ")}] has no plugins and no ` +
+            `sub-pipelines — it will never produce output.`,
+        );
+      }
+
+      if (def.plugins) {
+        for (let i = 0; i < def.plugins.length; i++) {
+          const p = def.plugins[i]!;
+          if (!p) {
+            throw new Error(
+              `Pipeline "${def.id}" at [${fullPath.join(", ")}] has a null/undefined ` +
+                `plugin at index ${i}.`,
+            );
+          }
+        }
+      }
+
+      if (def.pipelines) {
+        walk(def.pipelines, fullPath);
+      }
+    }
+  }
+
+  walk(defs, []);
 }

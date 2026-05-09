@@ -100,7 +100,7 @@ export type PipelineStage<I, O> = {
    */
   group?: string;
 
-  when: (input: I, ctx: PipelineContext, current: O) => Promise<StageDecision> | StageDecision;
+  when?: (input: I, ctx: PipelineContext, current: O) => Promise<StageDecision> | StageDecision;
   run: (input: I, ctx: PipelineContext) => Promise<O> | O;
   onError?: (
     error: unknown,

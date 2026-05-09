@@ -4,9 +4,7 @@ import { toast } from "sonner";
 import { MediaUploadSkeleton } from "./MediaUploadSkeleton";
 import type { MaxLongEdgePreset, MediaUploadFieldProps } from "./types";
 import { useMediaUpload } from "./useMediaUpload";
-import { createJpegCompressorPlugin } from "@vivsh1999/upupload/plugins/jpeg-compressor";
-import { createRawToJpegPlugin } from "@vivsh1999/upupload/plugins/raw-to-jpeg";
-import { createVideoPosterPlugin } from "@vivsh1999/upupload/plugins/video-poster";
+import { rawToJpeg, jpegCompressor, videoPoster } from "@vivsh1999/upupload/plugins";
 import type { ProcessingPlugin } from "@vivsh1999/upupload/react";
 
 export function MediaUploadField(props: MediaUploadFieldProps) {
@@ -45,11 +43,11 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
     const result: ProcessingPlugin<any>[] = [];
 
     // One decoder instance — output is shared via pipeline context
-    result.push(createRawToJpegPlugin());
+    result.push(rawToJpeg);
 
     if (optimizedEnabled) {
       result.push(
-        createJpegCompressorPlugin({
+        jpegCompressor.with({
           variant: "optimized",
           quality: qualityPercent,
           maxLongEdge,
@@ -59,7 +57,7 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
     }
     if (thumbnailEnabled) {
       result.push(
-        createJpegCompressorPlugin({
+        jpegCompressor.with({
           variant: "thumbnail",
           quality: 78,
           maxLongEdge: 640,
@@ -67,7 +65,7 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
         }),
       );
     }
-    result.push(createVideoPosterPlugin(), ...(extraPlugins ?? []));
+    result.push(videoPoster, ...(extraPlugins ?? []));
     return result;
   }, [optimizedEnabled, thumbnailEnabled, qualityPercent, maxLongEdge, extraPlugins]);
 
