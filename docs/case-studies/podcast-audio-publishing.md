@@ -548,7 +548,7 @@ export const waveformPlugin = new Plugin<WaveformOptions>({
 
 ```tsx
 import { useMemo } from "react";
-import { useMediaUpload, PluginProvider } from "@vivsh1999/upupload/react";
+import { useFileUpload, PluginProvider } from "@vivsh1999/upupload/react";
 import {
   audioNormalizerPlugin,
   silenceTrimmerPlugin,
@@ -616,7 +616,7 @@ function PodcastUploader({
     isDragOver,
     getDropTargetProps,
     getFileInputProps,
-  } = useMediaUpload({
+  } = useFileUpload({
     plugins: pp.plugins,
     pipeline: pipelines,
     maxNumberOfFiles: 1,

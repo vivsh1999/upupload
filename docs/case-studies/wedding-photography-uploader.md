@@ -18,7 +18,7 @@ Browser Input (RAW / HEIC / TIFF / JPEG / PNG)
 ┌─────────────────────────────────────────────┐
 │  UpUpload Pipeline                          │
 │                                             │
-│  1. validate-allowlist   (reject non-media) │
+│  1. validate-allowlist   (reject unsupported) │
 │  2. original             (always included)  │
 │  3. raw-to-jpeg plugin   (decode RAW/HEIC)  │
 │  4. jpeg-compressor × 2  (2 output variants)│
@@ -42,15 +42,15 @@ npm install @vivsh1999/upupload
 
 ## Complete Implementation
 
-### 1. React Hook — `useMediaUpload`
+### 1. React Hook — `useFileUpload`
 
 ```tsx
 import { useMemo, useState } from "react";
 import {
-  useMediaUpload,
+  useFileUpload,
   PluginProvider,
-  type UseMediaUploadOptions,
-  type MediaUploadQueueItem,
+  type UseFileUploadOptions,
+  type FileUploadQueueItem,
 } from "@vivsh1999/upupload/react";
 import { rawToJpeg, jpegCompressor, videoPoster } from "@vivsh1999/upupload/plugins";
 
@@ -129,7 +129,7 @@ function WeddingUploader() {
     getDropTargetProps,
     getFileInputProps,
     getFolderInputProps,
-  } = useMediaUpload({
+  } = useFileUpload({
     plugins: pp.plugins, // ← for plugin preloading
     pipeline: pipelines, // ← pipeline defs with typed refs
     pipelineConfig: {
@@ -290,7 +290,7 @@ pp.jpegCompressor({ variant: "gallery-thumb", quality: 78, maxLongEdge: 640 }),
 
 ### Plugin Preloading
 
-Decoders are pre-warmed automatically when `useMediaUpload` mounts — no manual `preloadBrowserPipelineForFiles` call needed. Each plugin's `.preload()` method dynamically imports the required WASM/JS decoders in the background.
+Decoders are pre-warmed automatically when `useFileUpload` mounts — no manual `preloadBrowserPipelineForFiles` call needed. Each plugin's `.preload()` method dynamically imports the required WASM/JS decoders in the background.
 
 ### Fallback Behavior
 
@@ -388,7 +388,7 @@ const pipelines: PipelineDef[] = [
 ];
 
 // Pass both:
-useMediaUpload({ plugins: pp.plugins, pipeline: pipelines, ... });
+useFileUpload({ plugins: pp.plugins, pipeline: pipelines, ... });
 ```
 
 The router descends recursively. Each `TypedPluginRef` carries the source plugin in `.defaults`, so the resolver can find it without a separate registry lookup. Options are merged with registry defaults — any field not specified in the ref falls through to the defaults set in the `PluginProvider`. Common stages (`validate-allowlist`, `original`) are always included automatically.
@@ -414,4 +414,4 @@ const pipeline = Pipeline((ctx, source) => [
 const result = await runPipelineFrom(input, pipeline);
 ```
 
-This is an advanced escape hatch — the `plugins` or `pipeline` options on `useMediaUpload` cover most needs.
+This is an advanced escape hatch — the `plugins` or `pipeline` options on `useFileUpload` cover most needs.

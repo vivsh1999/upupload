@@ -1,6 +1,6 @@
-# TanStack Start example — media uploads
+# TanStack Start example — file uploads
 
-TanStack Start app with **resumable uploads** over **TUS** (`/api/tus/`) and a **client-only** media pipeline from the **`@vivsh1999/upupload`** workspace package (no server-side transcoding).
+TanStack Start app with **resumable uploads** over **TUS** (`/api/tus/`) and a **client-only** file pipeline from the **`@vivsh1999/upupload`** workspace package (no server-side transcoding).
 
 ---
 
@@ -39,14 +39,14 @@ The on-disk object name under each folder is a random id (no extension); origina
 
 ## Key source files
 
-| Path                                               | Role                                                   |
-| -------------------------------------------------- | ------------------------------------------------------ |
-| `src/server.ts`                                    | TUS `Server`, `FileStore`, `onUploadCreate` / finish   |
-| `src/components/media-upload/MediaUploadField.tsx` | UI + `useMediaUpload` from `@vivsh1999/upupload/react` |
-| `src/components/UppyUploader.tsx`                  | Example wiring + pipeline config + picker `accept`     |
-| `src/lib/media-picker-accept.ts`                   | Broad file input `accept`                              |
-| `src/lib/media-allowlist.ts`                       | Server-side upload gate                                |
-| `src/lib/tus-variant-path.ts`                      | `variant` ↔ subdirectory mapping                       |
+| Path                                               | Role                                                  |
+| -------------------------------------------------- | ----------------------------------------------------- |
+| `src/server.ts`                                    | TUS `Server`, `FileStore`, `onUploadCreate` / finish  |
+| `src/components/media-upload/MediaUploadField.tsx` | UI + `useFileUpload` from `@vivsh1999/upupload/react` |
+| `src/components/UppyUploader.tsx`                  | Example wiring + pipeline config + picker `accept`    |
+| `src/lib/media-picker-accept.ts`                   | Broad file input `accept`                             |
+| `src/lib/media-allowlist.ts`                       | Server-side upload gate                               |
+| `src/lib/tus-variant-path.ts`                      | `variant` ↔ subdirectory mapping                      |
 
 ---
 

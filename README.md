@@ -1,6 +1,6 @@
 # @vivsh1999/upupload
 
-Client-first, multi-stage media uploader/processor with a **plugin architecture** for custom file processing.
+Client-first, multi-stage file uploader/processor with a **plugin architecture** for custom processing.
 
 - Pipeline engine handles validation, original passthrough, video posters, and safe fallback
 - **Plugin system** — every file-type-specific processor is a separate, tree-shakeable plugin
@@ -19,6 +19,18 @@ Client-first, multi-stage media uploader/processor with a **plugin architecture*
 | **Write your own custom plugin** for a specific file type or processing step  | [Custom Plugins](#custom-plugins) ↓ & [docs/plugins.md](docs/plugins.md)         |
 | **Publish a plugin** for the community (open-source extension)                | [Publishing Plugins](#publishing-plugins) ↓ & [docs/plugins.md](docs/plugins.md) |
 | **Contribute to the repo itself** — fix bugs, add features, improve docs      | [CONTRIBUTING.md](CONTRIBUTING.md)                                               |
+
+---
+
+## Agent Skills
+
+Install the UpUpload agent skill for AI-powered guidance on plugin configuration, React hook usage, custom plugin development, and more:
+
+```sh
+npx skills add vivsh1999/upupload
+```
+
+Works with OpenCode, Claude Code, Cursor, Codex, and 50+ other coding agents.
 
 ---
 
@@ -52,7 +64,7 @@ npm add heic-decode heic2any utif
 | `@vivsh1999/upupload`                         | Browser     | Re-exports core + browser                         | —           |
 | `@vivsh1999/upupload/browser`                 | Browser     | Pipeline, allowlist, audio/canvas utils, plugins  | 8 kB        |
 | `@vivsh1999/upupload/core`                    | Universal   | Generic pipeline engine, types, result helpers    | 1 kB        |
-| `@vivsh1999/upupload/react`                   | Browser     | `useMediaUpload` React hook                       | 60 kB       |
+| `@vivsh1999/upupload/react`                   | Browser     | `useFileUpload` React hook                        | 60 kB       |
 | `@vivsh1999/upupload/server`                  | Node        | Server entry (minimal)                            | < 1 kB      |
 | `@vivsh1999/upupload/plugins`                 | Browser     | Barrel re-export of all plugins                   | N/A         |
 | `@vivsh1999/upupload/plugins/jpeg-compressor` | Browser     | JPEG/PNG/WebP compressor plugin                   | +4 kB       |
@@ -70,11 +82,11 @@ Only the specific plugin path you import is added to your bundle.
 ### React (with built-in plugins)
 
 ```tsx
-import { useMediaUpload } from "@vivsh1999/upupload/react";
+import { useFileUpload } from "@vivsh1999/upupload/react";
 import { jpegCompressor } from "@vivsh1999/upupload/plugins";
 
 function Uploader() {
-  const { getDropTargetProps, getFileInputProps, queue, startUpload } = useMediaUpload({
+  const { getDropTargetProps, getFileInputProps, queue, startUpload } = useFileUpload({
     plugins: [jpegCompressor.with({ quality: 80, maxSizeMB: 1 })],
   });
   return (
@@ -94,11 +106,11 @@ function Uploader() {
 ### React (no plugins — validation + original passthrough only)
 
 ```tsx
-import { useMediaUpload } from "@vivsh1999/upupload/react";
+import { useFileUpload } from "@vivsh1999/upupload/react";
 
 function Uploader() {
   const { getDropTargetProps, getFileInputProps, queue, startUpload } =
-    useMediaUpload();
+    useFileUpload();
   // No plugins passed — files pass through validation only.
   // Queue items will have 1 artifact: variant "original".
   return (/* … */);
@@ -150,7 +162,7 @@ for (const artifact of result.artifacts) {
 With the React hook, use the `onFileComplete` callback:
 
 ```tsx
-useMediaUpload({
+useFileUpload({
   plugins: [jpegCompressor.with({ quality: 80 })],
   onFileComplete: async (item) => {
     for (const a of item.artifacts ?? []) {
@@ -190,7 +202,7 @@ const watermark = new Plugin<{ opacity: number }>({
 Register it like any built-in plugin:
 
 ```ts
-useMediaUpload({ plugins: [watermark.with({ opacity: 0.3 })] });
+useFileUpload({ plugins: [watermark.with({ opacity: 0.3 })] });
 ```
 
 Full guide: [docs/plugins.md](docs/plugins.md) — covers `createStages` for multi-stage plugins, shared context patterns, `after`/`before` ordering, error handling, and testing.
@@ -211,7 +223,7 @@ If you've built a plugin others can use, publish it as a standalone npm package.
 | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Pipeline engine (stages, features, utilities)       | [docs/pipeline.md](docs/pipeline.md)                                                                     |
 | Plugin system (using, writing, publishing, testing) | [docs/plugins.md](docs/plugins.md)                                                                       |
-| React hook (useMediaUpload, options, return value)  | [docs/react.md](docs/react.md)                                                                           |
+| React hook (useFileUpload, options, return value)   | [docs/react.md](docs/react.md)                                                                           |
 | Configuration reference (all types)                 | [docs/configuration.md](docs/configuration.md)                                                           |
 | Case study: e-commerce product photography          | [docs/case-studies/ecommerce-product-photography.md](docs/case-studies/ecommerce-product-photography.md) |
 | Case study: wedding photography client proofing     | [docs/case-studies/wedding-photography-uploader.md](docs/case-studies/wedding-photography-uploader.md)   |
@@ -235,7 +247,7 @@ npm add libraw-wasm heic-decode utif
 ## Examples
 
 - [`examples/vanilla-html`](./examples/vanilla-html) — basic pipeline + custom pipeline with a metadata-annotator plugin. Demonstrates writing a `Plugin` class from scratch, composing multiple plugins, and inspecting the result.
-- [`examples/tanstack-start`](./examples/tanstack-start) — TanStack Start app with TUS uploads and the React hook. Shows end-to-end upload with the `useMediaUpload` hook.
+- [`examples/tanstack-start`](./examples/tanstack-start) — TanStack Start app with TUS uploads and the React hook. Shows end-to-end upload with the `useFileUpload` hook.
 
 <!-- benchmarks:start -->
 

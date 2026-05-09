@@ -1,14 +1,14 @@
 # React Hook
 
-## `useMediaUpload`
+## `useFileUpload`
 
 ```tsx
-import { useMediaUpload } from "@vivsh1999/upupload/react";
+import { useFileUpload } from "@vivsh1999/upupload/react";
 import { jpegCompressor } from "@vivsh1999/upupload/plugins";
 
 function Uploader() {
   const { getDropTargetProps, getFileInputProps, queue, startUpload, isDragOver, cancelUpload } =
-    useMediaUpload({
+    useFileUpload({
       plugins: [jpegCompressor.with({ quality: 80, maxSizeMB: 1 })],
       getMeta: (file) => ({ uploadedAt: Date.now() }),
     });
@@ -35,16 +35,16 @@ function Uploader() {
 ### Options
 
 ```ts
-interface UseMediaUploadOptions<TMeta = void> {
+interface UseFileUploadOptions<TMeta = void> {
   plugins?: ProcessingPlugin<any>[];
   pipeline?: PipelineDef[];
   pipelineConfig?: Partial<BrowserPipelineOptions>;
   maxNumberOfFiles?: number;
-  tuning?: MediaUploadTuningOptions;
+  tuning?: FileUploadTuningOptions;
   onInfo?: (message: string) => void;
   onWarning?: (message: string) => void;
   onError?: (error: Error, context?: { fileName?: string }) => void;
-  onFileComplete?: (item: MediaUploadQueueItem<TMeta>) => void;
+  onFileComplete?: (item: FileUploadQueueItem<TMeta>) => void;
   getMeta?: (file: File) => TMeta;
 }
 ```
@@ -52,10 +52,10 @@ interface UseMediaUploadOptions<TMeta = void> {
 ### Return Value
 
 ```ts
-interface UseMediaUploadResult<TMeta = void> {
+interface UseFileUploadResult<TMeta = void> {
   config: BrowserPipelineOptions;
   updateConfig: (patch: Partial<BrowserPipelineOptions>) => void;
-  queue: MediaUploadQueueItem<TMeta>[];
+  queue: FileUploadQueueItem<TMeta>[];
   startUpload: (fileIds?: string[]) => Promise<void>;
   clear: () => void;
   retry: (fileId: string) => void;
@@ -72,7 +72,7 @@ interface UseMediaUploadResult<TMeta = void> {
 ### Queue Item
 
 ```ts
-interface MediaUploadQueueItem<TMeta = void> {
+interface FileUploadQueueItem<TMeta = void> {
   id: string;
   name: string;
   file: File;

@@ -9,7 +9,7 @@ import { createStartHandler, defaultStreamHandler } from "@tanstack/react-start/
 import type { Register } from "@tanstack/react-router";
 import type { RequestHandler } from "@tanstack/react-start/server";
 
-import { isSupportedMediaUpload } from "./lib/media-allowlist";
+import { isSupportedFileUpload } from "./lib/media-allowlist";
 import { TUS_VARIANT_TO_SUBDIR, variantFromTusMetadata } from "./lib/tus-variant-path";
 import { TUS_API_PATH, extractTusUploadIdFromRequest } from "./lib/tus-path";
 
@@ -21,10 +21,10 @@ for (const sub of Object.values(TUS_VARIANT_TO_SUBDIR)) {
   mkdirSync(path.join(uploadDir, sub), { recursive: true });
 }
 
-function isAllowedMediaUpload(metadata?: Record<string, string | null>) {
+function isAllowedFileUpload(metadata?: Record<string, string | null>) {
   const name = metadata?.filename ?? metadata?.name ?? "";
   const type = metadata?.type ?? metadata?.filetype ?? null;
-  return isSupportedMediaUpload({ name, type });
+  return isSupportedFileUpload({ name, type });
 }
 
 /** Safe file extension for on-disk names (from client `filename` / MIME). */
@@ -181,7 +181,7 @@ const tusServer = new TusServer({
         body: "Invalid or missing variant in upload metadata.\n",
       };
     }
-    if (!isAllowedMediaUpload(upload.metadata)) {
+    if (!isAllowedFileUpload(upload.metadata)) {
       throw {
         status_code: 415,
         body: "Only media uploads are allowed (video/audio/image + supported RAW formats).\n",

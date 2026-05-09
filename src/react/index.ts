@@ -15,13 +15,13 @@ export { Semaphore } from "./utils";
 export { PluginProvider } from "../plugin/plugin-provider";
 export type { TypedPluginRef } from "../plugin/plugin-provider";
 
-export interface MediaUploadTuningOptions {
+export interface FileUploadTuningOptions {
   /** Maximum number of files processed concurrently. Auto-detected based on CPU count. */
   maxConcurrency?: number;
 }
 
 /** A single file in the upload queue with processing state. */
-export interface MediaUploadQueueItem<TMeta = void> {
+export interface FileUploadQueueItem<TMeta = void> {
   id: string;
   name: string;
   file: File;
@@ -38,24 +38,24 @@ export interface MediaUploadQueueItem<TMeta = void> {
   }[];
 }
 
-export interface UseMediaUploadOptions<TMeta = void> {
+export interface UseFileUploadOptions<TMeta = void> {
   plugins?: ProcessingPlugin<any>[];
   pipeline?: PipelineDef[];
   pipelineConfig?: Partial<BrowserPipelineOptions>;
   maxNumberOfFiles?: number;
-  tuning?: MediaUploadTuningOptions;
+  tuning?: FileUploadTuningOptions;
   onInfo?: (message: string) => void;
   onWarning?: (message: string) => void;
   onError?: (error: Error, context?: { fileName?: string }) => void;
-  onFileComplete?: (item: MediaUploadQueueItem<TMeta>) => void;
+  onFileComplete?: (item: FileUploadQueueItem<TMeta>) => void;
   /** Metadata factory called for each file added to the queue. */
   getMeta?: (file: File) => TMeta;
 }
 
-export interface UseMediaUploadResult<TMeta = void> {
+export interface UseFileUploadResult<TMeta = void> {
   config: BrowserPipelineOptions;
   updateConfig: (patch: Partial<BrowserPipelineOptions>) => void;
-  queue: MediaUploadQueueItem<TMeta>[];
+  queue: FileUploadQueueItem<TMeta>[];
   startUpload: (fileIds?: string[]) => Promise<void>;
   clear: () => void;
   retry: (fileId: string) => void;
@@ -92,9 +92,9 @@ function defaultConcurrency(): number {
   return 4;
 }
 
-export function useMediaUpload<TMeta = void>(
-  options?: UseMediaUploadOptions<TMeta>,
-): UseMediaUploadResult<TMeta> {
+export function useFileUpload<TMeta = void>(
+  options?: UseFileUploadOptions<TMeta>,
+): UseFileUploadResult<TMeta> {
   const {
     plugins,
     pipeline,
@@ -112,7 +112,7 @@ export function useMediaUpload<TMeta = void>(
     debug: pipelineConfig?.debug ?? DEFAULT_BROWSER_PIPELINE_OPTIONS.debug,
   });
 
-  const [queue, setQueue] = useState<MediaUploadQueueItem<TMeta>[]>([]);
+  const [queue, setQueue] = useState<FileUploadQueueItem<TMeta>[]>([]);
   const queueRef = useRef(queue);
   queueRef.current = queue;
 
@@ -155,7 +155,7 @@ export function useMediaUpload<TMeta = void>(
       const fileArray = Array.from(fileList);
       const sliced = maxNumberOfFiles != null ? fileArray.slice(0, maxNumberOfFiles) : fileArray;
 
-      const newItems: MediaUploadQueueItem<TMeta>[] = [];
+      const newItems: FileUploadQueueItem<TMeta>[] = [];
       for (const file of sliced) {
         const id = uid();
         filesRef.current.set(id, file);
@@ -254,7 +254,7 @@ export function useMediaUpload<TMeta = void>(
   );
 
   const processFile = useCallback(
-    async (item: MediaUploadQueueItem<TMeta>, file: File): Promise<void> => {
+    async (item: FileUploadQueueItem<TMeta>, file: File): Promise<void> => {
       const {
         config: currentConfig,
         plugins: currentPlugins,
@@ -314,7 +314,7 @@ export function useMediaUpload<TMeta = void>(
           };
         });
 
-        const completedItem: MediaUploadQueueItem<TMeta> = {
+        const completedItem: FileUploadQueueItem<TMeta> = {
           ...item,
           status: "complete" as const,
           progress: 100,
