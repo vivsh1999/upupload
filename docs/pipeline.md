@@ -4,7 +4,7 @@ Stages run in this fixed order:
 
 | Stage                | Condition        | What it does                                                                                 |
 | -------------------- | ---------------- | -------------------------------------------------------------------------------------------- |
-| `validate-allowlist` | Always           | Rejects non-media files (exe, txt, etc.)                                                     |
+| `validate-allowlist` | Always           | Rejects unsupported files (exe, txt, etc.)                                                   |
 | `original`           | Always           | Passes source file through as `original` variant                                             |
 | _plugin stages_      | Per `supports()` | Stages contributed by matched plugins (topologically sorted by `after`/`before` constraints) |
 
@@ -164,7 +164,7 @@ for (const artifact of result.artifacts) {
 With the React hook, use `onFileComplete` — it fires once per file with all artifacts:
 
 ```tsx
-useMediaUpload({
+useFileUpload({
   plugins: [jpegCompressor.with({ quality: 80 })],
   onFileComplete: async (item) => {
     for (const artifact of item.artifacts ?? []) {
@@ -185,7 +185,7 @@ The `onFileComplete` callback receives the full queue item including `meta` (fro
 Use `startUpload(fileIds)` to process only specific items from the queue:
 
 ```tsx
-const { startUpload, queue } = useMediaUpload({ plugins });
+const { startUpload, queue } = useFileUpload({ plugins });
 
 // Upload only completed items
 const completedIds = queue.filter((item) => item.status === "complete").map((item) => item.id);

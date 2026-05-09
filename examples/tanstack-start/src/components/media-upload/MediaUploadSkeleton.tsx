@@ -1,6 +1,6 @@
 import type { MaxLongEdgePreset } from "./types";
 import { DEFAULT_MAX_RESOLUTION_OPTIONS } from "./types";
-import type { MediaUploadQueueItem, MediaUploadSkeletonProps } from "./types";
+import type { FileUploadQueueItem, MediaUploadSkeletonProps } from "./types";
 
 function cx(...parts: Array<string | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -22,14 +22,14 @@ const defaultLabels: NonNullable<MediaUploadSkeletonProps["labels"]> = {
   uploading: "Uploading…",
 };
 
-function statusLabel(item: MediaUploadQueueItem, lb: MediaUploadSkeletonProps["labels"]) {
+function statusLabel(item: FileUploadQueueItem, lb: MediaUploadSkeletonProps["labels"]) {
   if (item.status === "processing") return lb?.processing ?? defaultLabels.processing;
   if (item.status === "complete") return lb?.uploading ?? defaultLabels.uploading;
   return null;
 }
 
 function DefaultUploadQueue(props: {
-  items: MediaUploadQueueItem[];
+  items: FileUploadQueueItem[];
   classNames?: MediaUploadSkeletonProps["classNames"];
   labels?: MediaUploadSkeletonProps["labels"];
   onRetry?: (id: string) => void;

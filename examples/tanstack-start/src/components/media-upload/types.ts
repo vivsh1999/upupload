@@ -1,10 +1,10 @@
 import type { ComponentProps, DragEvent, HTMLAttributes, ReactNode, Ref } from "react";
 import type {
   BrowserPipelineOptions,
-  MediaUploadQueueItem,
-  MediaUploadTuningOptions,
-  UseMediaUploadOptions,
-  UseMediaUploadResult,
+  FileUploadQueueItem,
+  FileUploadTuningOptions,
+  UseFileUploadOptions,
+  UseFileUploadResult,
 } from "@vivsh1999/upupload/react";
 
 export type MaxLongEdgePreset = "original" | 640 | 720 | 1280 | 1920 | 2560 | 3840;
@@ -25,8 +25,8 @@ export const DEFAULT_MAX_RESOLUTION_OPTIONS: ReadonlyArray<{
 export type { BrowserPipelineOptions };
 export type MediaUploadQueueStatus = "idle" | "processing" | "complete" | "error";
 
-export type { MediaUploadQueueItem, MediaUploadTuningOptions };
-export type { UseMediaUploadOptions, UseMediaUploadResult };
+export type { FileUploadQueueItem, FileUploadTuningOptions };
+export type { UseFileUploadOptions, UseFileUploadResult };
 
 export interface MediaUploadSkeletonClassNames {
   root?: string;
@@ -90,7 +90,7 @@ export interface MediaUploadSkeletonProps {
   onDragOver: (event: DragEvent<HTMLDivElement>) => void;
   onStartUpload: () => void;
   onClear: () => void;
-  uploadQueue?: MediaUploadQueueItem[];
+  uploadQueue?: FileUploadQueueItem[];
   onRetryQueueItem?: (fileId: string) => void;
   disabled?: boolean;
   classNames?: MediaUploadSkeletonClassNames;
@@ -139,11 +139,11 @@ export interface MediaUploadFieldProps
       | "folderInputProps"
       | "dropTargetProps"
     >,
-    UseMediaUploadOptions {
+    UseFileUploadOptions {
   maxNumberOfFiles?: number;
   fileInputProps?: Omit<ComponentProps<"input">, "type" | "multiple">;
   folderInputProps?: Omit<ComponentProps<"input">, "type" | "multiple">;
   dropTargetProps?: Omit<HTMLAttributes<HTMLDivElement>, "onDrop" | "onDragOver">;
-  renderFileList?: (queue: MediaUploadQueueItem[]) => ReactNode;
+  renderFileList?: (queue: FileUploadQueueItem[]) => ReactNode;
   className?: string;
 }

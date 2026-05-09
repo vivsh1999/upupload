@@ -2,6 +2,16 @@
 
 Thank you for your interest in contributing to `@vivsh1999/upupload`!
 
+If you have a coding agent that supports agent skills (OpenCode, Claude Code, Cursor, etc.), install the contributor skills for inline guidance:
+
+```sh
+# For repo contributors (this guide, automated):
+npx skills add vivsh1999/upupload --skill upupload-contribute
+
+# For publishing standalone plugins:
+npx skills add vivsh1999/upupload --skill upupload-publish-plugin
+```
+
 ## Code of Conduct
 
 This project follows a code of conduct that all contributors are expected to uphold. Please be respectful and constructive in all interactions.
@@ -39,7 +49,7 @@ src/
 │   ├── test-utils.ts          # Plugin test utilities
 │   └── index.ts               # Barrel export
 ├── browser/     # Browser-specific utils (pipeline, allowlist, canvas, audio)
-├── react/       # useMediaUpload React hook + Semaphore utility
+├── react/       # useFileUpload React hook + Semaphore utility
 ├── server/      # Server entry (ServerProcessor interface)
 ├── preset/      # Zero-config upload() with auto-detected plugins
 ├── bench/       # Benchmarks (run via `vitest bench`)

@@ -171,11 +171,11 @@ runDefaultBrowserPipeline(source, opts, {
 });
 
 // React hook:
-useMediaUpload({ plugins: [jpegCompressor.with({ quality: 80, maxSizeMB: 1 })] });
+useFileUpload({ plugins: [jpegCompressor.with({ quality: 80, maxSizeMB: 1 })] });
 
 // React hook with pipeline definitions and typed PluginProvider:
 const pp = new PluginProvider([rawToJpeg, jpegCompressor.with({ quality: 80, maxSizeMB: 1 })]);
-useMediaUpload({
+useFileUpload({
   plugins: pp.plugins,
   pipeline: [
     {

@@ -18,7 +18,7 @@ Browser Input (RAW / HEIC / JPEG / PNG from any device)
 ┌────────────────────────────────────────────────┐
 │  UpUpload Pipeline                             │
 │                                                │
-│  1. validate-allowlist  (reject non-media)     │
+│  1. validate-allowlist  (reject unsupported)     │
 │  2. original            (always present)       │
 │  3. raw-to-jpeg plugin  (decode RAW/HEIC/TIFF) │
 │  4. brand-watermark     (custom plugin)        │
@@ -171,7 +171,7 @@ export const brandWatermarkPlugin = new Plugin<BrandWatermarkOptions>({
 
 ```tsx
 import { useMemo, useState } from "react";
-import { useMediaUpload, PluginProvider } from "@vivsh1999/upupload/react";
+import { useFileUpload, PluginProvider } from "@vivsh1999/upupload/react";
 import { rawToJpeg, jpegCompressor } from "@vivsh1999/upupload/plugins";
 
 const pp = new PluginProvider([
@@ -246,7 +246,7 @@ function ProductUploader() {
     isBusy,
     getDropTargetProps,
     getFileInputProps,
-  } = useMediaUpload({
+  } = useFileUpload({
     plugins: pp.plugins,
     pipeline: pipelines,
     maxNumberOfFiles: 50,

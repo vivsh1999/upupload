@@ -1,7 +1,7 @@
 {
   "name": "@vivsh1999/upupload",
   "version": "0.1.1",
-  "description": "Client-first, multi-stage media uploader/processor with safe fallback-to-original behavior",
+  "description": "Client-first, multi-stage file uploader/processor with safe fallback-to-original behavior",
   "license": "MIT",
   "repository": {
     "type": "git",
