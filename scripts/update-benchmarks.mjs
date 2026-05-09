@@ -32,10 +32,7 @@ const GROUPS = [
   },
   {
     title: "Plugins (Individual)",
-    describes: [
-      "Plugin class",
-      "PluginProvider",
-    ],
+    describes: ["Plugin class", "PluginProvider"],
   },
   {
     title: "Plugins (Pipeline Composition)",
@@ -126,9 +123,7 @@ for (const r of benchResults) {
   if (r.groupIdx !== currentGroupIdx) {
     const group = GROUPS[r.groupIdx];
     const title = group ? group.title : "Other";
-    sections.push(
-      `### ${title}\n\n| Benchmark | Ops/sec |\n|-----------|---------|\n`,
-    );
+    sections.push(`### ${title}\n\n| Benchmark | Ops/sec |\n|-----------|---------|\n`);
     currentGroupIdx = r.groupIdx;
   }
   const fullName = `${r.describe} > ${r.name}`;
@@ -158,10 +153,7 @@ let readme = readFileSync("README.md", "utf-8");
 const startIdx = readme.indexOf(startMarker);
 const endIdx = readme.indexOf(endMarker);
 if (startIdx !== -1 && endIdx !== -1) {
-  readme =
-    readme.slice(0, startIdx) +
-    sectionContent +
-    readme.slice(endIdx + endMarker.length);
+  readme = readme.slice(0, startIdx) + sectionContent + readme.slice(endIdx + endMarker.length);
 } else {
   readme = readme.trimEnd() + "\n\n" + sectionContent;
 }

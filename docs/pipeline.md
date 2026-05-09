@@ -188,8 +188,6 @@ Use `startUpload(fileIds)` to process only specific items from the queue:
 const { startUpload, queue } = useMediaUpload({ plugins });
 
 // Upload only completed items
-const completedIds = queue
-  .filter((item) => item.status === "complete")
-  .map((item) => item.id);
+const completedIds = queue.filter((item) => item.status === "complete").map((item) => item.id);
 startUpload(completedIds);
 ```

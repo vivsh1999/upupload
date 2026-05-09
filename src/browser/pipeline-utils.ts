@@ -155,7 +155,10 @@ export function resolvePluginRefs(
       continue;
     }
     let hasOpts = false;
-    for (const _k in p.opts) { hasOpts = true; break; }
+    for (const _k in p.opts) {
+      hasOpts = true;
+      break;
+    }
     if (!hasOpts) {
       result[i] = plugin;
       continue;

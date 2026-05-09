@@ -76,4 +76,3 @@ export const rawToJpeg: Plugin<RawToJpegPluginOptions> = new Plugin<RawToJpegPlu
   },
   preload: () => preloadRawDecoder(),
 });
-

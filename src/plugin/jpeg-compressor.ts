@@ -111,4 +111,3 @@ export const jpegCompressor: Plugin<JpegCompressorPluginOptions> =
     },
     preload: () => preloadImageCompression(),
   });
-

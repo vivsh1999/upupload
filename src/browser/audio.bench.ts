@@ -1,11 +1,7 @@
 import { bench, describe } from "vitest";
 import { audioBufferToWav } from "./audio";
 
-function createMockBuffer(
-  channels: number,
-  sampleRate: number,
-  length: number,
-): AudioBuffer {
+function createMockBuffer(channels: number, sampleRate: number, length: number): AudioBuffer {
   return {
     numberOfChannels: channels,
     sampleRate,

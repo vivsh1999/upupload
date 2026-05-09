@@ -4,11 +4,7 @@ export function blobToArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
 
 const HAS_OFFSCREEN_CANVAS = typeof OffscreenCanvas !== "undefined";
 
-function makeImageData(
-  data: Uint8ClampedArray,
-  width: number,
-  height: number,
-): ImageData {
+function makeImageData(data: Uint8ClampedArray, width: number, height: number): ImageData {
   const img = new ImageData(width, height);
   img.data.set(data);
   return img;

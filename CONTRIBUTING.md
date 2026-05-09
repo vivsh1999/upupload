@@ -84,7 +84,11 @@ Tests live next to the source file they test (e.g. `src/core/runPipeline.test.ts
 
 ```ts
 import { describe, it, expect } from "vitest";
-import { mockPipelineSource, mockPipelineContext, mockFileClassification } from "@vivsh1999/upupload/plugins/testing";
+import {
+  mockPipelineSource,
+  mockPipelineContext,
+  mockFileClassification,
+} from "@vivsh1999/upupload/plugins/testing";
 import { myPlugin } from "./my-plugin";
 
 describe("my-plugin", () => {
@@ -155,15 +159,15 @@ The plugin system is at the heart of the project. Every file-type-specific proce
 
 A plugin must satisfy the `ProcessingPlugin<TOpts>` interface:
 
-| Field          | Description                                                              |
-| -------------- | ------------------------------------------------------------------------ |
-| `id`           | Unique string identifier (e.g. `"jpeg-compressor"`)                      |
-| `name`         | Human-readable name                                                      |
-| `options`      | Default options (typed as `TOpts`)                                       |
-| `supports(file)` | Returns `true` if the plugin can handle this file                      |
-| `run()`        | Async processing function — receives input, opts, classification, context |
-| `sharedKeys`   | Declares shared context key names so downstream plugins can reference them without hardcoded strings |
-| `preload?()`   | Optional preload hook called once before any file is processed            |
+| Field            | Description                                                                                          |
+| ---------------- | ---------------------------------------------------------------------------------------------------- |
+| `id`             | Unique string identifier (e.g. `"jpeg-compressor"`)                                                  |
+| `name`           | Human-readable name                                                                                  |
+| `options`        | Default options (typed as `TOpts`)                                                                   |
+| `supports(file)` | Returns `true` if the plugin can handle this file                                                    |
+| `run()`          | Async processing function — receives input, opts, classification, context                            |
+| `sharedKeys`     | Declares shared context key names so downstream plugins can reference them without hardcoded strings |
+| `preload?()`     | Optional preload hook called once before any file is processed                                       |
 
 The canonical way to create a plugin is using the `Plugin` class:
 
@@ -213,11 +217,11 @@ The second argument accepts `{ instanceId }` for multi-instance setups. Instance
 
 #### Built-in Plugins
 
-| Plugin            | File type            | Import path                                   | Purpose                    |
-| ----------------- | -------------------- | --------------------------------------------- | -------------------------- |
-| `rawToJpeg`       | RAW/HEIC/TIFF → JPEG | `@vivsh1999/upupload/plugins/raw-to-jpeg`     | Pure decoder, no artifact  |
-| `jpegCompressor`  | JPEG/PNG/WebP → JPEG | `@vivsh1999/upupload/plugins/jpeg-compressor` | Compress/thumbnail variant |
-| `videoPoster`     | Video → JPEG poster  | `@vivsh1999/upupload/plugins/video-poster`    | Video poster frame         |
+| Plugin           | File type            | Import path                                   | Purpose                    |
+| ---------------- | -------------------- | --------------------------------------------- | -------------------------- |
+| `rawToJpeg`      | RAW/HEIC/TIFF → JPEG | `@vivsh1999/upupload/plugins/raw-to-jpeg`     | Pure decoder, no artifact  |
+| `jpegCompressor` | JPEG/PNG/WebP → JPEG | `@vivsh1999/upupload/plugins/jpeg-compressor` | Compress/thumbnail variant |
+| `videoPoster`    | Video → JPEG poster  | `@vivsh1999/upupload/plugins/video-poster`    | Video poster frame         |
 
 - `rawToJpeg` decodes camera RAW files and places the result in shared context. It produces no artifact — downstream plugins (e.g. `jpegCompressor`) read from shared context and emit the actual file.
 - Plugin files prefixed with `_` (e.g. `_rasterize.ts`, `_rawDecode.ts`) are internal and not part of the public API.
@@ -250,6 +254,7 @@ sharedKeys: { output: "my-plugin:processed" },
 #### Plugin Dependencies
 
 Plugins should avoid heavy dependencies that get bundled unconditionally. Follow the existing pattern:
+
 - Core dependencies are listed as regular dependencies but should be lightweight
 - Heavy decoders (`libraw-wasm`, `heic-decode`, `heic2any`, `utif`) are imported dynamically at runtime only when needed
 - Document required peer/optional deps in the plugin's JSDoc and README

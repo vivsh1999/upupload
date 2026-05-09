@@ -132,13 +132,16 @@ describe("resolvePluginRefs", () => {
   });
 
   bench("5 PluginRef with opts + .with() merging", () => {
-    resolvePluginRefs([
-      { id: "alpha", opts: { quality: 90 } },
-      { id: "beta-compressor", opts: { variant: "thumb", quality: 78 } },
-      { id: "gamma-decoder", opts: {} },
-      { id: "delta-watermark", opts: { text: "© 2026" } },
-      { id: "epsilon-meta", opts: {} },
-    ], REGISTRY);
+    resolvePluginRefs(
+      [
+        { id: "alpha", opts: { quality: 90 } },
+        { id: "beta-compressor", opts: { variant: "thumb", quality: 78 } },
+        { id: "gamma-decoder", opts: {} },
+        { id: "delta-watermark", opts: { text: "© 2026" } },
+        { id: "epsilon-meta", opts: {} },
+      ],
+      REGISTRY,
+    );
   });
 
   bench("5 PluginRef with defaults (no registry lookup)", () => {

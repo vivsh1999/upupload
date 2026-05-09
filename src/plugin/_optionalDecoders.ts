@@ -67,11 +67,9 @@ export async function tryDecodeTiffToJpegFile(source: File): Promise<File | null
         : rgba.buffer.slice(rgba.byteOffset, rgba.byteOffset + rgba.byteLength),
     );
     const stemName = source.name.replace(/\.(tif|tiff)$/i, "");
-    const out = await jpegFileFromImageData(
-      { data, width, height },
-      `${stemName}.jpg`,
-      { quality: 0.92 },
-    );
+    const out = await jpegFileFromImageData({ data, width, height }, `${stemName}.jpg`, {
+      quality: 0.92,
+    });
     return out;
   } catch {
     return null;

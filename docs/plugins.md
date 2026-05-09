@@ -388,16 +388,16 @@ my-plugin/
 
 ### Plugin Contract for Published Plugins
 
-| Aspect | Requirement |
-|---|---|
-| `id` | Globally unique, kebab-case (e.g. `"awesome-filter"`) |
-| `name` | Human-readable (e.g. `"Awesome Filter Plugin"`) |
-| `supports()` | Accurate classifier — prefer MIME checks over extension checks |
-| `run()` / `createStages()` | Must return `PipelineResult` — use `emptyResult()` / `artifact()` helpers |
-| `sharedKeys` | Declare every key the plugin writes to shared context |
-| `after` / `before` | Declare ordering constraints relative to other known plugin IDs |
-| `options` | Sensible defaults — the plugin should work with `.with({})` (no overrides) |
-| `preload()` | Pre-warm WASM decoders or other expensive async setup |
+| Aspect                     | Requirement                                                                |
+| -------------------------- | -------------------------------------------------------------------------- |
+| `id`                       | Globally unique, kebab-case (e.g. `"awesome-filter"`)                      |
+| `name`                     | Human-readable (e.g. `"Awesome Filter Plugin"`)                            |
+| `supports()`               | Accurate classifier — prefer MIME checks over extension checks             |
+| `run()` / `createStages()` | Must return `PipelineResult` — use `emptyResult()` / `artifact()` helpers  |
+| `sharedKeys`               | Declare every key the plugin writes to shared context                      |
+| `after` / `before`         | Declare ordering constraints relative to other known plugin IDs            |
+| `options`                  | Sensible defaults — the plugin should work with `.with({})` (no overrides) |
+| `preload()`                | Pre-warm WASM decoders or other expensive async setup                      |
 
 ### Submission to This Repo
 

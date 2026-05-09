@@ -4,7 +4,11 @@ import { PIPELINE_CURRENT_KEY } from "../core/constants";
 import { Plugin } from "./plugin";
 import { warning, artifact } from "../core/result";
 
-async function videoPosterFile(source: File, maxEdge: number, stemName: string): Promise<File | null> {
+async function videoPosterFile(
+  source: File,
+  maxEdge: number,
+  stemName: string,
+): Promise<File | null> {
   const url = URL.createObjectURL(source);
   try {
     const video = document.createElement("video");
@@ -72,7 +76,11 @@ export const videoPoster: Plugin<VideoPosterPluginOptions> = new Plugin<VideoPos
   run: async (input, pluginOpts, classif, ctx) => {
     // Follow the pipeline:current convention so downstream plugins can chain
     const sourceFile = (ctx.shared.get(PIPELINE_CURRENT_KEY) as File | undefined) ?? input.file;
-    const poster = await videoPosterFile(sourceFile as File, pluginOpts.maxEdge ?? 640, classif.stemName);
+    const poster = await videoPosterFile(
+      sourceFile as File,
+      pluginOpts.maxEdge ?? 640,
+      classif.stemName,
+    );
     if (!poster) {
       return {
         artifacts: [],
@@ -96,4 +104,3 @@ export const videoPoster: Plugin<VideoPosterPluginOptions> = new Plugin<VideoPos
     };
   },
 });
-

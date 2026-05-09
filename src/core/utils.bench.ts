@@ -1,5 +1,14 @@
 import { bench, describe } from "vitest";
-import { compose, stage, sharedGet, sharedSet, createTimingMiddleware, Pipeline, flattenPipeline, runPipelineFrom } from "./utils";
+import {
+  compose,
+  stage,
+  sharedGet,
+  sharedSet,
+  createTimingMiddleware,
+  Pipeline,
+  flattenPipeline,
+  runPipelineFrom,
+} from "./utils";
 import type { PipelineContext, PipelineSource, PipelineStage, PipelineResult } from "./types";
 
 const ctx: PipelineContext = { log: () => {}, shared: new Map() };

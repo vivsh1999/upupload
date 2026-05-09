@@ -95,9 +95,7 @@ describe.skipIf(!DOM_CANVAS)("Wedding RAW (DNG) → client-proof + gallery-thumb
         );
       }
       if (clientProof.file.size > 1.1 * 1024 * 1024) {
-        throw new Error(
-          `Expected client-proof <= ~1 MB; got ${clientProof.file.size} bytes`,
-        );
+        throw new Error(`Expected client-proof <= ~1 MB; got ${clientProof.file.size} bytes`);
       }
     },
     { time: 120_000 },

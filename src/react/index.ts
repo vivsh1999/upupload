@@ -15,7 +15,6 @@ export { Semaphore } from "./utils";
 export { PluginProvider } from "../plugin/plugin-provider";
 export type { TypedPluginRef } from "../plugin/plugin-provider";
 
-
 export interface MediaUploadTuningOptions {
   /** Maximum number of files processed concurrently. Auto-detected based on CPU count. */
   maxConcurrency?: number;

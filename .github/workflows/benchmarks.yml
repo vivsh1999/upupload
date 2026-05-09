@@ -32,7 +32,7 @@ jobs:
         run: vp install
 
       - name: Run benchmarks
-        run: pnpm bench
+        run: vp run bench
 
       - name: Update README with results
         run: node scripts/update-benchmarks.mjs
