@@ -60,12 +60,16 @@ export async function tryDecodeTiffToJpegFile(source: File): Promise<File | null
     const width = Number(first.width || first.t256);
     const height = Number(first.height || first.t257);
     if (!width || !height || !rgba?.length) return null;
+    const isOwnBuffer = rgba.byteOffset === 0 && rgba.byteLength === rgba.buffer.byteLength;
     const data = new Uint8ClampedArray(
-      rgba.buffer.slice(rgba.byteOffset, rgba.byteOffset + rgba.byteLength),
+      isOwnBuffer
+        ? rgba.buffer
+        : rgba.buffer.slice(rgba.byteOffset, rgba.byteOffset + rgba.byteLength),
     );
+    const stemName = source.name.replace(/\.(tif|tiff)$/i, "");
     const out = await jpegFileFromImageData(
       { data, width, height },
-      `${source.name.replace(/\.(tif|tiff)$/i, "")}.jpg`,
+      `${stemName}.jpg`,
       { quality: 0.92 },
     );
     return out;

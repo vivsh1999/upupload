@@ -8,9 +8,9 @@ import type {
   PipelineStage,
 } from "./types";
 
-function defaultLogger(): PipelineLogger {
-  return () => {};
-}
+const NOOP_LOGGER: PipelineLogger = () => {};
+const ALWAYS_RUN_DECISION = { run: true } as const;
+const ALWAYS_RUN = () => ALWAYS_RUN_DECISION;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -68,7 +68,7 @@ async function executeStage<I extends PipelineSource, O extends PipelineResult>(
   options: PipelineOptions | undefined,
   current?: PipelineResult,
 ): Promise<{ result: O; skipped: boolean }> {
-  const guard = stage.when ?? (() => ({ run: true }) as const);
+  const guard = stage.when ?? ALWAYS_RUN;
   const decision = await guard(source, ctx, (current ?? initialResult()) as O);
   if (!decision.run) {
     if (decision.reason) {
@@ -162,7 +162,7 @@ export async function runPipeline(
   def: PipelineDefinition<PipelineSource, PipelineResult>,
   options?: PipelineOptions,
 ): Promise<PipelineResult> {
-  const log = options?.logger ?? defaultLogger();
+  const log = options?.logger ?? NOOP_LOGGER;
   const ctx: PipelineContext = options?.ctx ?? {
     log,
     shared: new Map<string, unknown>(),
@@ -172,10 +172,14 @@ export async function runPipeline(
   const total = def.stages.length;
   const stages = def.middleware ? applyMiddleware(def.stages, def.middleware) : def.stages;
 
-  // Validate dependencies
-  const stageIds = new Set(stages.map((s) => s.id));
+  // Validate dependencies (lazy — only build Set when a stage declares dependsOn)
+  let stageIds: Set<string> | undefined;
   for (const stage of stages) {
     if (stage.dependsOn) {
+      if (!stageIds) {
+        stageIds = new Set<string>();
+        for (const s of stages) stageIds.add(s.id);
+      }
       for (const depId of stage.dependsOn) {
         if (!stageIds.has(depId)) {
           throw new Error(

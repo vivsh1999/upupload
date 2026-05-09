@@ -1,0 +1,285 @@
+# Contributing
+
+Thank you for your interest in contributing to `@vivsh1999/upupload`!
+
+## Code of Conduct
+
+This project follows a code of conduct that all contributors are expected to uphold. Please be respectful and constructive in all interactions.
+
+## Getting Started
+
+### Prerequisites
+
+- [pnpm](https://pnpm.io/) v10.2.0+
+- [Vite+](https://github.com/voidzero-dev/vite-plus) (`vp`) — the build and dev toolchain
+  - Install: `pnpm add -g vite-plus` or use `npx vp`
+
+### Setup
+
+```sh
+git clone https://github.com/vivsh1999/upupload.git
+cd upupload
+pnpm install
+```
+
+## Project Structure
+
+```
+src/
+├── core/        # Generic pipeline engine (types, runPipeline, result helpers, utils)
+├── plugin/      # Plugin system (ProcessingPlugin interface, Plugin class, built-in plugins)
+│   ├── plugin.ts              # Plugin class — canonical way to create plugins
+│   ├── types.ts               # ProcessingPlugin interface, FileClassification, sharedKeys
+│   ├── jpeg-compressor.ts     # JPEG/PNG/WebP compressor plugin
+│   ├── raw-to-jpeg.ts         # RAW/HEIC/TIFF decoder plugin
+│   ├── video-poster.ts        # Video poster frame plugin
+│   ├── _rasterize.ts          # Canvas JPEG conversion (internal)
+│   ├── _rawDecode.ts          # LibRaw WASM decoder (internal)
+│   ├── _optionalDecoders.ts   # HEIC/TIFF dynamic imports (internal)
+│   ├── test-utils.ts          # Plugin test utilities
+│   └── index.ts               # Barrel export
+├── browser/     # Browser-specific utils (pipeline, allowlist, canvas, audio)
+├── react/       # useMediaUpload React hook + Semaphore utility
+├── server/      # Server entry (ServerProcessor interface)
+├── preset/      # Zero-config upload() with auto-detected plugins
+├── bench/       # Benchmarks (run via `vitest bench`)
+└── index.ts     # Main barrel export
+
+docs/            # Documentation markdown files
+examples/        # Example projects (vanilla-html, tanstack-start)
+```
+
+## Development Workflow
+
+### Available Commands
+
+```sh
+vp check        # Check formatting + types (runs before tests in CI)
+vp test         # Run tests (Vitest)
+vp pack         # Build the project
+vp pack --watch # Dev mode with file watching
+```
+
+### Running Tests
+
+```sh
+vp test                           # Run all tests
+vp test --run src/core/core.test  # Single test file
+```
+
+Tests use **Vitest** with a **jsdom** environment. The setup file (`vitest.setup.ts`) patches `HTMLCanvasElement` with `node-canvas` bindings so image-processing code can run under Vitest.
+
+### Code Style
+
+- **No comments** in source code unless explicitly required — let the code speak for itself
+- **TypeScript-native** — full type inference, never cast or annotate inferred values
+- **Tree-shakeable** — each plugin is a separate import path; no side effects
+- **JSDoc** — all exported symbols must have JSDoc comments for JSR publishing (80%+ coverage required). Entrypoint files need a `@module` doc block at the top.
+
+### Testing Patterns
+
+Tests live next to the source file they test (e.g. `src/core/runPipeline.test.ts`). We use **Vitest** with **jsdom**.
+
+**Unit test pattern for a plugin:**
+
+```ts
+import { describe, it, expect } from "vitest";
+import { mockPipelineSource, mockPipelineContext, mockFileClassification } from "@vivsh1999/upupload/plugins/testing";
+import { myPlugin } from "./my-plugin";
+
+describe("my-plugin", () => {
+  it("produces an artifact for supported files", async () => {
+    const source = mockPipelineSource({ name: "test.png", type: "image/png" });
+    const ctx = mockPipelineContext();
+    const classif = mockFileClassification({ ext: ".png", mime: "image/png" });
+
+    const stages = myPlugin.createStages(source, myPlugin.options, classif, ctx);
+    const result = await stages[0]!.run(source, ctx);
+
+    expect(result.artifacts).toHaveLength(1);
+    expect(result.artifacts[0]!.variant).toBe("output");
+  });
+
+  it("does not match unsupported files", () => {
+    expect(myPlugin.supports({ name: "file.txt", type: "text/plain" })).toBe(false);
+  });
+});
+```
+
+**Integration test pattern:**
+
+```ts
+import { describe, it, expect } from "vitest";
+import { runDefaultBrowserPipeline } from "../browser/pipeline";
+
+describe("my-plugin integration", () => {
+  it("processes a file end-to-end", async () => {
+    const file = new File(["fake-image-data"], "test.png", { type: "image/png" });
+    const result = await runDefaultBrowserPipeline(
+      { file, name: "test.png", type: "image/png" },
+      {},
+      { plugins: [myPlugin.with({ quality: 80 })] },
+    );
+    expect(result.artifacts.length).toBeGreaterThan(0);
+  });
+});
+```
+
+**Benchmarks** use `vitest bench` and live in `src/**/*.bench.ts`. Add a benchmark for any performance-sensitive code path:
+
+```ts
+import { bench, describe } from "vitest";
+import { allowlist } from "../browser/allowlist";
+
+describe("allowlist", () => {
+  bench("video (MIME match)", () => {
+    allowlist("video/mp4", "file.mp4");
+  });
+});
+```
+
+Run benchmarks with `vitest bench` — results are autogenerated into the README.
+
+### Conventions
+
+- Plugins use the `Plugin` class with the `.with()` pattern for configuration overrides
+- Pipeline stages communicate through the shared context bag (`ctx.shared: Map<string, unknown>`)
+- File classifications use `FileClassification` which includes `stemName`, `ext`, `size`, `lastModified`, and optional `meta`
+- Always import from the public entry point paths (e.g. `@vivsh1999/upupload/core`, not relative paths to `src/`)
+
+### Plugin System
+
+The plugin system is at the heart of the project. Every file-type-specific processor is a separate, tree-shakeable plugin.
+
+#### Plugin Contract
+
+A plugin must satisfy the `ProcessingPlugin<TOpts>` interface:
+
+| Field          | Description                                                              |
+| -------------- | ------------------------------------------------------------------------ |
+| `id`           | Unique string identifier (e.g. `"jpeg-compressor"`)                      |
+| `name`         | Human-readable name                                                      |
+| `options`      | Default options (typed as `TOpts`)                                       |
+| `supports(file)` | Returns `true` if the plugin can handle this file                      |
+| `run()`        | Async processing function — receives input, opts, classification, context |
+| `sharedKeys`   | Declares shared context key names so downstream plugins can reference them without hardcoded strings |
+| `preload?()`   | Optional preload hook called once before any file is processed            |
+
+The canonical way to create a plugin is using the `Plugin` class:
+
+```ts
+import { Plugin } from "@vivsh1999/upupload/plugins";
+import { emptyResult } from "@vivsh1999/upupload/core";
+
+const myPlugin = new Plugin<{ quality: number }>({
+  id: "my-plugin",
+  name: "My Plugin",
+  options: { quality: 80 },
+  supports(file) {
+    return file.type === "image/jpeg";
+  },
+  run: async (input, opts, classif, ctx) => {
+    // input — the file blob / stream
+    // opts — resolved options (defaults merged with user overrides via .with())
+    // classif — FileClassification with stemName, ext, size, lastModified, meta
+    // ctx.shared — Map<string, unknown> for inter-plugin communication
+    // ctx.log(level, message, extra?) — structured logging
+    // ctx.signal — AbortSignal for cancellation support
+    return emptyResult();
+  },
+  sharedKeys: { output: "my-plugin:processed" },
+});
+```
+
+#### The `.with()` Pattern
+
+Plugins are configured using `.with()` instead of factory functions:
+
+```ts
+const compressed = jpegCompressor.with({ quality: 80, maxLongEdge: 1920 });
+
+// Multi-instance (e.g. multiple output variants for the same file):
+const proof = jpegCompressor.with(
+  { variant: "client-proof", quality: 85, maxLongEdge: 2560 },
+  { instanceId: "proof" },
+);
+const thumb = jpegCompressor.with(
+  { variant: "thumbnail", quality: 78, maxLongEdge: 640 },
+  { instanceId: "thumb" },
+);
+```
+
+The second argument accepts `{ instanceId }` for multi-instance setups. Instance IDs must be unique within a plugin registry.
+
+#### Built-in Plugins
+
+| Plugin            | File type            | Import path                                   | Purpose                    |
+| ----------------- | -------------------- | --------------------------------------------- | -------------------------- |
+| `rawToJpeg`       | RAW/HEIC/TIFF → JPEG | `@vivsh1999/upupload/plugins/raw-to-jpeg`     | Pure decoder, no artifact  |
+| `jpegCompressor`  | JPEG/PNG/WebP → JPEG | `@vivsh1999/upupload/plugins/jpeg-compressor` | Compress/thumbnail variant |
+| `videoPoster`     | Video → JPEG poster  | `@vivsh1999/upupload/plugins/video-poster`    | Video poster frame         |
+
+- `rawToJpeg` decodes camera RAW files and places the result in shared context. It produces no artifact — downstream plugins (e.g. `jpegCompressor`) read from shared context and emit the actual file.
+- Plugin files prefixed with `_` (e.g. `_rasterize.ts`, `_rawDecode.ts`) are internal and not part of the public API.
+
+#### Shared Context
+
+Plugins communicate by reading/writing keys in `ctx.shared`:
+
+```ts
+ctx.shared.set("my-plugin:processed", processedBlob);
+const data = ctx.shared.get("my-plugin:processed");
+```
+
+Declare shared key names on the plugin so consumers can reference them without string literals:
+
+```ts
+sharedKeys: { output: "my-plugin:processed" },
+// Usage: otherPlugin.options.inputKey = myPlugin.sharedKeys.output
+```
+
+#### Writing a New Plugin
+
+1. Create the file in `src/plugin/` (e.g. `src/plugin/my-plugin.ts`)
+2. Export a `Plugin` instance (or a raw `ProcessingPlugin` object if you need full control)
+3. Add the export to `src/plugin/index.ts`
+4. Add the import path to `package.json` `exports` and `jsr.json` `exports`
+5. Write tests in `src/plugin/my-plugin.test.ts`
+6. Add JSDoc module docs at the top of the entrypoint file and JSDoc on all exported symbols
+
+#### Plugin Dependencies
+
+Plugins should avoid heavy dependencies that get bundled unconditionally. Follow the existing pattern:
+- Core dependencies are listed as regular dependencies but should be lightweight
+- Heavy decoders (`libraw-wasm`, `heic-decode`, `heic2any`, `utif`) are imported dynamically at runtime only when needed
+- Document required peer/optional deps in the plugin's JSDoc and README
+
+## Pull Request Process
+
+1. Fork the repository and create a feature branch from `main`
+2. Make your changes following the code style conventions above
+3. Run `vp check` to verify formatting and types
+4. Run `vp test` to ensure all tests pass
+5. Submit a pull request against `main` with a clear description of the changes
+
+## Publishing
+
+Publishing is handled automatically via GitHub Actions on release creation. Maintainers can also publish manually:
+
+### npm
+
+```sh
+pnpm build
+pnpm publish
+```
+
+### JSR
+
+```sh
+pnpm build
+npx jsr publish
+```
+
+## License
+
+By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).

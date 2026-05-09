@@ -1,9 +1,17 @@
-export async function blobToArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
-  return await blob.arrayBuffer();
+export function blobToArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
+  return blob.arrayBuffer();
 }
 
-function hasOffscreenCanvas() {
-  return typeof OffscreenCanvas !== "undefined";
+const HAS_OFFSCREEN_CANVAS = typeof OffscreenCanvas !== "undefined";
+
+function makeImageData(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+): ImageData {
+  const img = new ImageData(width, height);
+  img.data.set(data);
+  return img;
 }
 
 export async function jpegFileFromImageData(
@@ -15,17 +23,17 @@ export async function jpegFileFromImageData(
   if (!width || !height || !data?.length) return null;
 
   const q = options?.quality ?? 0.92;
+  const now = Date.now();
 
-  if (hasOffscreenCanvas()) {
+  if (HAS_OFFSCREEN_CANVAS) {
     const canvas = new OffscreenCanvas(width, height);
     const ctx = canvas.getContext("2d");
     if (ctx) {
-      const imageData = ctx.createImageData(width, height);
-      imageData.data.set(data);
+      const imageData = makeImageData(data, width, height);
       ctx.putImageData(imageData, 0, 0);
       try {
         const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: q });
-        return new File([blob], filename, { type: "image/jpeg", lastModified: Date.now() });
+        return new File([blob], filename, { type: "image/jpeg", lastModified: now });
       } catch {}
     }
   }
@@ -36,13 +44,12 @@ export async function jpegFileFromImageData(
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
 
-  const imageData = ctx.createImageData(width, height);
-  imageData.data.set(data);
+  const imageData = makeImageData(data, width, height);
   ctx.putImageData(imageData, 0, 0);
 
   const blob = await new Promise<Blob | null>((resolve) => {
     canvas.toBlob((b) => resolve(b), "image/jpeg", q);
   });
   if (!blob) return null;
-  return new File([blob], filename, { type: "image/jpeg", lastModified: Date.now() });
+  return new File([blob], filename, { type: "image/jpeg", lastModified: now });
 }

@@ -11,17 +11,10 @@ import { Semaphore } from "./utils";
 export type { BrowserPipelineOptions, PipelineDef } from "../browser/pipeline";
 export { Plugin } from "../plugin/plugin";
 export type { ProcessingPlugin, FileClassification } from "../plugin/types";
-export { toJpegName, toThumbName } from "../browser/pipeline";
+export { Semaphore } from "./utils";
 export { PluginProvider } from "../plugin/plugin-provider";
 export type { TypedPluginRef } from "../plugin/plugin-provider";
-export {
-  isCameraRawImage,
-  isHeicLike,
-  isTiffLike,
-  isSupportedMediaUpload,
-  isVideoLike,
-  isAudioLike,
-} from "../browser";
+
 
 export interface MediaUploadTuningOptions {
   /** Maximum number of files processed concurrently. Auto-detected based on CPU count. */

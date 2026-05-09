@@ -1,5 +1,5 @@
 import { beforeAll, bench, describe } from "vitest";
-import { DEFAULT_BROWSER_PIPELINE_OPTIONS, runDefaultBrowserPipeline } from "../browser/pipeline";
+import { DEFAULT_BROWSER_PIPELINE_OPTIONS, runDefaultBrowserPipeline } from "./pipeline";
 import type { PipelineSource } from "../core/types";
 import { jpegCompressor } from "../plugin/jpeg-compressor";
 import { rawToJpeg } from "../plugin/raw-to-jpeg";
@@ -53,6 +53,7 @@ function benchRawFixtureUrl(): string {
 
 describe.skipIf(!DOM_CANVAS)("RAW (DNG) -> optimized JPEG", () => {
   let source: PipelineSource;
+  let optimizedPlugin: typeof jpegCompressor;
   beforeAll(async () => {
     const url = benchRawFixtureUrl();
     const res = await fetch(url);
@@ -61,24 +62,20 @@ describe.skipIf(!DOM_CANVAS)("RAW (DNG) -> optimized JPEG", () => {
     const file = new File([buf], "bench-sample.dng", { type: "application/octet-stream" });
     source = { file, name: "bench-sample.dng", type: "application/octet-stream" };
     rawToJpeg.preload?.();
-    jpegCompressor
-      .with({ variant: "optimized", quality: 90, maxLongEdge: 3840, maxSizeMB: 1 })
-      .preload?.();
+    optimizedPlugin = jpegCompressor.with({
+      variant: "optimized",
+      quality: 90,
+      maxLongEdge: 3840,
+      maxSizeMB: 1,
+    });
+    optimizedPlugin.preload?.();
   }, 240_000);
 
   bench(
     "runDefaultBrowserPipeline",
     async () => {
       const out = await runDefaultBrowserPipeline(source, DEFAULT_BROWSER_PIPELINE_OPTIONS, {
-        plugins: [
-          rawToJpeg,
-          jpegCompressor.with({
-            variant: "optimized",
-            quality: 90,
-            maxLongEdge: 3840,
-            maxSizeMB: 1,
-          }),
-        ],
+        plugins: [rawToJpeg, optimizedPlugin],
       });
       const optimized = out.artifacts.find((a) => a.variant === "optimized");
       if (!optimized) {
@@ -101,26 +98,24 @@ describe.skipIf(!DOM_CANVAS)("RAW (DNG) -> optimized JPEG", () => {
 
 describe.skipIf(!DOM_CANVAS)("Raster JPEG -> optimized JPEG", () => {
   let source: PipelineSource;
+  let optimizedPlugin: typeof jpegCompressor;
   beforeAll(async () => {
     const file = await createTestImageFile(1920, 1080, "photo.jpg", "image/jpeg");
     source = { file, name: "photo.jpg", type: "image/jpeg" };
-    jpegCompressor
-      .with({ variant: "optimized", quality: 90, maxLongEdge: 3840, maxSizeMB: 1 })
-      .preload?.();
+    optimizedPlugin = jpegCompressor.with({
+      variant: "optimized",
+      quality: 90,
+      maxLongEdge: 3840,
+      maxSizeMB: 1,
+    });
+    optimizedPlugin.preload?.();
   }, 30_000);
 
   bench(
     "runDefaultBrowserPipeline",
     async () => {
       const out = await runDefaultBrowserPipeline(source, DEFAULT_BROWSER_PIPELINE_OPTIONS, {
-        plugins: [
-          jpegCompressor.with({
-            variant: "optimized",
-            quality: 90,
-            maxLongEdge: 3840,
-            maxSizeMB: 1,
-          }),
-        ],
+        plugins: [optimizedPlugin],
       });
       const optimized = out.artifacts.find((a) => a.variant === "optimized");
       if (!optimized) {
@@ -138,35 +133,32 @@ describe.skipIf(!DOM_CANVAS)("Raster JPEG -> optimized JPEG", () => {
 
 describe.skipIf(!DOM_CANVAS)("Raster PNG -> optimized JPEG + thumbnail", () => {
   let source: PipelineSource;
+  let optimizedPlugin: typeof jpegCompressor;
+  let thumbnailPlugin: typeof jpegCompressor;
   beforeAll(async () => {
     const file = await createTestImageFile(1920, 1080, "photo.png", "image/png");
     source = { file, name: "photo.png", type: "image/png" };
-    jpegCompressor
-      .with({ variant: "optimized", quality: 90, maxLongEdge: 3840, maxSizeMB: 1 })
-      .preload?.();
-    jpegCompressor
-      .with({ variant: "thumbnail", quality: 78, maxLongEdge: 640, maxSizeMB: 0.25 })
-      .preload?.();
+    optimizedPlugin = jpegCompressor.with({
+      variant: "optimized",
+      quality: 90,
+      maxLongEdge: 3840,
+      maxSizeMB: 1,
+    });
+    optimizedPlugin.preload?.();
+    thumbnailPlugin = jpegCompressor.with({
+      variant: "thumbnail",
+      quality: 78,
+      maxLongEdge: 640,
+      maxSizeMB: 0.25,
+    });
+    thumbnailPlugin.preload?.();
   }, 30_000);
 
   bench(
     "runDefaultBrowserPipeline",
     async () => {
       const out = await runDefaultBrowserPipeline(source, DEFAULT_BROWSER_PIPELINE_OPTIONS, {
-        plugins: [
-          jpegCompressor.with({
-            variant: "optimized",
-            quality: 90,
-            maxLongEdge: 3840,
-            maxSizeMB: 1,
-          }),
-          jpegCompressor.with({
-            variant: "thumbnail",
-            quality: 78,
-            maxLongEdge: 640,
-            maxSizeMB: 0.25,
-          }),
-        ],
+        plugins: [optimizedPlugin, thumbnailPlugin],
       });
       const optimized = out.artifacts.find((a) => a.variant === "optimized");
       const thumbnail = out.artifacts.find((a) => a.variant === "thumbnail");
@@ -185,26 +177,24 @@ describe.skipIf(!DOM_CANVAS)("Raster PNG -> optimized JPEG + thumbnail", () => {
 
 describe.skipIf(!DOM_CANVAS)("Large PNG -> optimized JPEG (maxLongEdge=1920)", () => {
   let source: PipelineSource;
+  let optimizedPlugin: typeof jpegCompressor;
   beforeAll(async () => {
     const file = await createTestImageFile(4000, 3000, "large.png", "image/png");
     source = { file, name: "large.png", type: "image/png" };
-    jpegCompressor
-      .with({ variant: "optimized", quality: 90, maxLongEdge: 1920, maxSizeMB: 1 })
-      .preload?.();
+    optimizedPlugin = jpegCompressor.with({
+      variant: "optimized",
+      quality: 90,
+      maxLongEdge: 1920,
+      maxSizeMB: 1,
+    });
+    optimizedPlugin.preload?.();
   }, 30_000);
 
   bench(
     "runDefaultBrowserPipeline",
     async () => {
       const out = await runDefaultBrowserPipeline(source, DEFAULT_BROWSER_PIPELINE_OPTIONS, {
-        plugins: [
-          jpegCompressor.with({
-            variant: "optimized",
-            quality: 90,
-            maxLongEdge: 1920,
-            maxSizeMB: 1,
-          }),
-        ],
+        plugins: [optimizedPlugin],
       });
       const optimized = out.artifacts.find((a) => a.variant === "optimized");
       if (!optimized) {
@@ -222,26 +212,24 @@ describe.skipIf(!DOM_CANVAS)("Large PNG -> optimized JPEG (maxLongEdge=1920)", (
 
 describe.skipIf(!DOM_CANVAS)("PNG -> thumbnail only", () => {
   let source: PipelineSource;
+  let thumbnailPlugin: typeof jpegCompressor;
   beforeAll(async () => {
     const file = await createTestImageFile(1920, 1080, "photo.png", "image/png");
     source = { file, name: "photo.png", type: "image/png" };
-    jpegCompressor
-      .with({ variant: "thumbnail", quality: 78, maxLongEdge: 640, maxSizeMB: 0.25 })
-      .preload?.();
+    thumbnailPlugin = jpegCompressor.with({
+      variant: "thumbnail",
+      quality: 78,
+      maxLongEdge: 640,
+      maxSizeMB: 0.25,
+    });
+    thumbnailPlugin.preload?.();
   }, 30_000);
 
   bench(
     "runDefaultBrowserPipeline",
     async () => {
       const out = await runDefaultBrowserPipeline(source, DEFAULT_BROWSER_PIPELINE_OPTIONS, {
-        plugins: [
-          jpegCompressor.with({
-            variant: "thumbnail",
-            quality: 78,
-            maxLongEdge: 640,
-            maxSizeMB: 0.25,
-          }),
-        ],
+        plugins: [thumbnailPlugin],
       });
       const thumbnail = out.artifacts.find((a) => a.variant === "thumbnail");
       if (!thumbnail) {

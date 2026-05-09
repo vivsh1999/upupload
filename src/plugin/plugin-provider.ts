@@ -46,8 +46,20 @@ export interface TypedPluginRef<TOpts = Record<string, unknown>> extends PluginR
 // ---------------------------------------------------------------------------
 
 function kebabToMethodName(id: string): string {
-  const cleaned = id.replace(/[:\-_./]/g, " ");
-  return cleaned.replace(/\s+([a-zA-Z0-9])/g, (_, c) => c.toUpperCase()).replace(/\s+/g, "");
+  let out = "";
+  let capNext = false;
+  for (let i = 0; i < id.length; i++) {
+    const c = id[i]!;
+    if (c === "-" || c === ":" || c === "_" || c === "." || c === "/") {
+      capNext = true;
+    } else if (capNext) {
+      out += c.toUpperCase();
+      capNext = false;
+    } else {
+      out += c;
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -65,23 +77,19 @@ function createPluginProvider<T extends readonly ProcessingPlugin<any>[]>(
     map.set(p.id, p);
   }
 
-  const methods: Record<string, Function> = {};
+  const target: Record<string, unknown> = {
+    plugins: [...map.values()],
+    getPlugin: (id: string) => map.get(id),
+  };
 
   for (const plugin of plugins) {
     const methodName = kebabToMethodName(plugin.id);
-    const pluginId = plugin.id;
-    methods[methodName] = (opts?: Record<string, unknown>) => ({
-      id: pluginId,
+    target[methodName] = (opts?: Record<string, unknown>) => ({
+      id: plugin.id,
       ...(opts && Object.keys(opts).length > 0 ? { opts } : {}),
       defaults: plugin,
     });
   }
-
-  const target = {
-    plugins: [...map.values()],
-    getPlugin: (id: string) => map.get(id),
-    ...methods,
-  };
 
   return target as unknown as PluginProvider<T>;
 }

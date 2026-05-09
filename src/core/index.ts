@@ -13,3 +13,4 @@ export {
   flattenPipeline,
 } from "./utils";
 export { emptyResult, artifact, warning, infoMessage } from "./result";
+export { PIPELINE_CURRENT_KEY } from "./constants";

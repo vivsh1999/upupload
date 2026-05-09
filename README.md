@@ -4,11 +4,23 @@ Client-first, multi-stage media uploader/processor with a **plugin architecture*
 
 - Pipeline engine handles validation, original passthrough, video posters, and safe fallback
 - **Plugin system** — every file-type-specific processor is a separate, tree-shakeable plugin
-- Ships two processing plugins: `rawToJpeg` (RAW/HEIC/TIFF) and `jpegCompressor` (compress/thumbnail)
+- Ships built-in plugins: `rawToJpeg` (RAW/HEIC/TIFF), `jpegCompressor` (compress/thumbnail), `videoPoster`
 - **Zero-cost imports** — plugins are tree-shaken at the bundler level; pay only for what you use
-- **No auto-installed heavy deps** — plugin dependencies (`browser-image-compression`, `libraw-wasm`) are never installed unless you add them
-- Optional decoder dependencies (HEIC/HEIF, TIFF, LibRaw WASM) loaded via runtime imports
+- **No auto-installed heavy deps** — plugin dependencies are never installed unless you add them
 - TypeScript-native, fully typed
+
+---
+
+## Who Is This For?
+
+| You want to…                                                                  | Start here                                                                       |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| **Use built-in plugins (or none at all)** to process images/video in your app | [Quick Start](#quick-start) ↓                                                    |
+| **Write your own custom plugin** for a specific file type or processing step  | [Custom Plugins](#custom-plugins) ↓ & [docs/plugins.md](docs/plugins.md)         |
+| **Publish a plugin** for the community (open-source extension)                | [Publishing Plugins](#publishing-plugins) ↓ & [docs/plugins.md](docs/plugins.md) |
+| **Contribute to the repo itself** — fix bugs, add features, improve docs      | [CONTRIBUTING.md](CONTRIBUTING.md)                                               |
+
+---
 
 ## Installation
 
@@ -31,6 +43,8 @@ npm add libraw-wasm
 npm add heic-decode heic2any utif
 ```
 
+---
+
 ## Entry Points
 
 | Path                                          | Environment | Contents                                          | Bundle cost |
@@ -43,14 +57,17 @@ npm add heic-decode heic2any utif
 | `@vivsh1999/upupload/plugins`                 | Browser     | Barrel re-export of all plugins                   | N/A         |
 | `@vivsh1999/upupload/plugins/jpeg-compressor` | Browser     | JPEG/PNG/WebP compressor plugin                   | +4 kB       |
 | `@vivsh1999/upupload/plugins/raw-to-jpeg`     | Browser     | RAW/HEIC/TIFF decoder plugin                      | +12 kB      |
+| `@vivsh1999/upupload/plugins/video-poster`    | Browser     | Video poster frame plugin                         | +6 kB       |
 | `@vivsh1999/upupload/plugins/testing`         | Browser     | Plugin test utilities                             | +1 kB       |
 | `@vivsh1999/upupload/preset`                  | Browser     | Zero-config `upload()` with auto-detected plugins | +13 kB      |
 
 Only the specific plugin path you import is added to your bundle.
 
+---
+
 ## Quick Start
 
-### React
+### React (with built-in plugins)
 
 ```tsx
 import { useMediaUpload } from "@vivsh1999/upupload/react";
@@ -74,7 +91,21 @@ function Uploader() {
 }
 ```
 
-### Vanilla JS
+### React (no plugins — validation + original passthrough only)
+
+```tsx
+import { useMediaUpload } from "@vivsh1999/upupload/react";
+
+function Uploader() {
+  const { getDropTargetProps, getFileInputProps, queue, startUpload } =
+    useMediaUpload();
+  // No plugins passed — files pass through validation only.
+  // Queue items will have 1 artifact: variant "original".
+  return (/* … */);
+}
+```
+
+### Vanilla JS (with built-in plugins)
 
 ```js
 import { runDefaultBrowserPipeline } from "@vivsh1999/upupload/browser";
@@ -85,6 +116,15 @@ const result = await runDefaultBrowserPipeline(source, opts, {
 });
 ```
 
+### Vanilla JS (no plugins)
+
+```js
+import { runDefaultBrowserPipeline } from "@vivsh1999/upupload/browser";
+
+const result = await runDefaultBrowserPipeline({ file, name: file.name, type: file.type }, {});
+// result.artifacts has 1 item: variant "original"
+```
+
 ### Preset (zero-config)
 
 ```ts
@@ -93,17 +133,89 @@ import { upload } from "@vivsh1999/upupload/preset";
 const result = await upload(file, { quality: 80 });
 ```
 
+### Handling Results (uploading artifacts)
+
+After processing, iterate over `result.artifacts` and upload each one:
+
+```ts
+for (const artifact of result.artifacts) {
+  await fetch("/api/upload", {
+    method: "POST",
+    body: artifact.file,
+    headers: { "Content-Type": artifact.filetype },
+  });
+}
+```
+
+With the React hook, use the `onFileComplete` callback:
+
+```tsx
+useMediaUpload({
+  plugins: [jpegCompressor.with({ quality: 80 })],
+  onFileComplete: async (item) => {
+    for (const a of item.artifacts ?? []) {
+      await fetch("/api/upload", { method: "POST", body: a.blob });
+    }
+  },
+});
+```
+
+---
+
+## Custom Plugins
+
+Write your own plugin to handle file types or processing that the built-in plugins don't cover.
+
+### Minimal Example
+
+```ts
+import { Plugin } from "@vivsh1999/upupload/plugins";
+import { artifact } from "@vivsh1999/upupload/core";
+
+const watermark = new Plugin<{ opacity: number }>({
+  id: "watermark",
+  name: "Watermark Plugin",
+  options: { opacity: 0.5 },
+  supports: (file) => file.type?.startsWith("image/") ?? false,
+  run: async (input, opts, classif, ctx) => {
+    // opts.opacity is typed as number
+    // classif.stemName, classif.ext — file metadata
+    // ctx.shared — inter-plugin communication
+    // ctx.log — structured logging
+    return artifact("watermarked", input.file, classif.stemName + ".jpg", "image/jpeg");
+  },
+});
+```
+
+Register it like any built-in plugin:
+
+```ts
+useMediaUpload({ plugins: [watermark.with({ opacity: 0.3 })] });
+```
+
+Full guide: [docs/plugins.md](docs/plugins.md) — covers `createStages` for multi-stage plugins, shared context patterns, `after`/`before` ordering, error handling, and testing.
+
+Real example: [`examples/vanilla-html/custom-pipeline.js`](examples/vanilla-html/custom-pipeline.js) — a metadata-annotator plugin that reads image dimensions and writes JSON.
+
+---
+
+## Publishing Plugins
+
+If you've built a plugin others can use, publish it as a standalone npm package. See [docs/plugins.md#publishing-a-plugin](docs/plugins.md#publishing-a-plugin) for the full checklist: naming conventions, `supports()` contract, shared keys, tree-shaking setup, JSR compliance, and testing requirements.
+
+---
+
 ## Documentation
 
-| Topic                                                    | File                                                                                                     |
-| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Pipeline engine (stages, features, utilities)            | [docs/pipeline.md](docs/pipeline.md)                                                                     |
-| Plugin system (architecture, built-in, custom, ordering) | [docs/plugins.md](docs/plugins.md)                                                                       |
-| React hook (useMediaUpload, options, return value)       | [docs/react.md](docs/react.md)                                                                           |
-| Configuration reference (all types)                      | [docs/configuration.md](docs/configuration.md)                                                           |
-| Case study: e-commerce product photography               | [docs/case-studies/ecommerce-product-photography.md](docs/case-studies/ecommerce-product-photography.md) |
-| Case study: wedding photography client proofing          | [docs/case-studies/wedding-photography-uploader.md](docs/case-studies/wedding-photography-uploader.md)   |
-| Case study: podcast audio publishing                     | [docs/case-studies/podcast-audio-publishing.md](docs/case-studies/podcast-audio-publishing.md)           |
+| Topic                                               | File                                                                                                     |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Pipeline engine (stages, features, utilities)       | [docs/pipeline.md](docs/pipeline.md)                                                                     |
+| Plugin system (using, writing, publishing, testing) | [docs/plugins.md](docs/plugins.md)                                                                       |
+| React hook (useMediaUpload, options, return value)  | [docs/react.md](docs/react.md)                                                                           |
+| Configuration reference (all types)                 | [docs/configuration.md](docs/configuration.md)                                                           |
+| Case study: e-commerce product photography          | [docs/case-studies/ecommerce-product-photography.md](docs/case-studies/ecommerce-product-photography.md) |
+| Case study: wedding photography client proofing     | [docs/case-studies/wedding-photography-uploader.md](docs/case-studies/wedding-photography-uploader.md)   |
+| Case study: podcast audio publishing                | [docs/case-studies/podcast-audio-publishing.md](docs/case-studies/podcast-audio-publishing.md)           |
 
 ## Decoder Dependencies
 
@@ -122,45 +234,121 @@ npm add libraw-wasm heic-decode utif
 
 ## Examples
 
-- [`examples/vanilla-html`](./examples/vanilla-html) — basic pipeline + custom pipeline with a metadata-annotator plugin
-- [`examples/tanstack-start`](./examples/tanstack-start) — TanStack Start app with TUS uploads and the React hook
+- [`examples/vanilla-html`](./examples/vanilla-html) — basic pipeline + custom pipeline with a metadata-annotator plugin. Demonstrates writing a `Plugin` class from scratch, composing multiple plugins, and inspecting the result.
+- [`examples/tanstack-start`](./examples/tanstack-start) — TanStack Start app with TUS uploads and the React hook. Shows end-to-end upload with the `useMediaUpload` hook.
+
+<!-- benchmarks:start -->
 
 ## Benchmarks
 
 Autogenerated from `vitest bench` (via pre-commit hook).
 
-| Benchmark                                       | Ops/sec       |
-| ----------------------------------------------- | ------------- |
-| video (MIME match)                              | 10,168,589.72 |
-| RAW octet-stream (extension match)              | 8,567,993.35  |
-| SVG (MIME match)                                | 9,314,471.01  |
-| raster image (MIME match)                       | 5,232,945.06  |
-| audio (MIME match)                              | 9,437,983.75  |
-| reject (text/plain)                             | 12,165,859.42 |
-| by MIME                                         | 6,851,393.54  |
-| by extension                                    | 9,151,491.84  |
-| false (image)                                   | 9,816,349.82  |
-| by MIME                                         | 7,093,559.64  |
-| by extension                                    | 8,662,919.74  |
-| false (image)                                   | 7,560,968.81  |
-| RAW extension — true                            | 1,316,086.50  |
-| non-RAW extension — false                       | 10,673,378.51 |
-| .heic extension — true                          | 7,245,043.19  |
-| image/heif MIME — true                          | 7,797,078.81  |
-| false (PNG)                                     | 8,012,864.43  |
-| .tif extension — true                           | 6,738,261.93  |
-| .tiff extension — true                          | 7,163,943.86  |
-| image/tiff MIME — true                          | 7,731,014.38  |
-| false (JPEG)                                    | 7,682,037.80  |
-| video — true                                    | 6,956,152.33  |
-| audio — true                                    | 6,828,677.83  |
-| SVG — true                                      | 5,354,166.49  |
-| raster PNG — false                              | 6,047,694.72  |
-| RAW extension — true                            | 4,792,822.45  |
-| raster PNG — true                               | 5,235,225.36  |
-| SVG — false                                     | 5,429,362.64  |
-| audio — false                                   | 6,898,723.72  |
-| 7 async stages (like real pipeline)             | 121.36        |
-| 7 stages with half skipped (when returns false) | 211.76        |
-| stage error → onError fallback                  | 284.15        |
-| stage error → onError skip                      | 266.31        |
+### Internal Components
+
+| Benchmark                                                            | Ops/sec       |
+| -------------------------------------------------------------------- | ------------- |
+| isSupportedMediaUpload > video (MIME match)                          | 15,073,296.07 |
+| isSupportedMediaUpload > RAW octet-stream (extension match)          | 11,955,470.11 |
+| isSupportedMediaUpload > SVG (MIME match)                            | 14,532,527.59 |
+| isSupportedMediaUpload > raster image (MIME match)                   | 11,708,006.27 |
+| isSupportedMediaUpload > audio (MIME match)                          | 16,024,497.56 |
+| isSupportedMediaUpload > reject (text/plain)                         | 19,281,363.96 |
+| isVideoLike > by MIME                                                | 11,111,595.24 |
+| isVideoLike > by extension                                           | 13,857,924.28 |
+| isVideoLike > false (image)                                          | 15,813,134.67 |
+| isAudioLike > by MIME                                                | 11,152,169.33 |
+| isAudioLike > by extension                                           | 13,420,693.30 |
+| isAudioLike > false (image)                                          | 15,282,835.69 |
+| isCameraRawImage > RAW extension — true                              | 2,667,052.69  |
+| isCameraRawImage > non-RAW extension — false                         | 18,112,437.78 |
+| isHeicLike > .heic extension — true                                  | 13,757,269.48 |
+| isHeicLike > image/heif MIME — true                                  | 12,352,610.32 |
+| isHeicLike > false (PNG)                                             | 12,302,667.58 |
+| isTiffLike > .tif extension — true                                   | 13,906,517.89 |
+| isTiffLike > .tiff extension — true                                  | 13,804,937.67 |
+| isTiffLike > image/tiff MIME — true                                  | 10,693,511.85 |
+| isTiffLike > false (JPEG)                                            | 12,393,327.83 |
+| shouldUploadWithoutTranscode > video — true                          | 11,087,666.82 |
+| shouldUploadWithoutTranscode > audio — true                          | 10,884,814.78 |
+| shouldUploadWithoutTranscode > SVG — true                            | 9,246,114.17  |
+| shouldUploadWithoutTranscode > raster PNG — false                    | 9,058,613.87  |
+| shouldCompressToJpeg > RAW extension — true                          | 7,122,869.49  |
+| shouldCompressToJpeg > raster PNG — true                             | 8,111,717.72  |
+| shouldCompressToJpeg > SVG — false                                   | 9,354,001.01  |
+| shouldCompressToJpeg > audio — false                                 | 10,502,126.05 |
+| fileExtensionLower > .JPG → .jpg                                     | 17,238,983.24 |
+| fileExtensionLower > .Tar.Gz → .gz                                   | 18,020,920.88 |
+| fileExtensionLower > no extension → empty                            | 17,972,534.20 |
+| stem > photo.jpg → photo                                             | 17,928,724.71 |
+| stem > archive.tar.gz → archive.tar                                  | 17,991,650.67 |
+| stem > noext → noext                                                 | 16,177,753.58 |
+| toJpegName > photo.png → photo.jpg                                   | 15,366,197.62 |
+| toJpegName > img.heic → img.jpg                                      | 16,447,879.24 |
+| toThumbName > photo.png → photo.thumb.jpg                            | 16,387,479.64 |
+| toThumbName > img.heic → img.thumb.jpg                               | 16,532,807.01 |
+| info helper > level + message                                        | 23,951,594.80 |
+| info helper > level + message + code                                 | 23,973,463.33 |
+| result helpers > emptyResult                                         | 25,220,863.04 |
+| result helpers > artifact                                            | 93,058.37     |
+| result helpers > warning                                             | 24,504,789.56 |
+| result helpers > infoMessage                                         | 23,800,453.33 |
+| Semaphore > new Semaphore(4)                                         | 24,138,773.28 |
+| Semaphore > acquire + release — uncontended (concurrency=10, 1 task) | 6,758,443.49  |
+| Semaphore > acquire — contended (concurrency=1, 2 tasks)             | 3,889,893.96  |
+| Semaphore > run() — 10 concurrent resolved promises                  | 402,950.01    |
+| audioBufferToWav > empty buffer (no samples, mono @ 44100)           | 805,351.33    |
+| audioBufferToWav > 1 sec mono @ 44100                                | 2,660.70      |
+| audioBufferToWav > 5 sec stereo @ 48000                              | 251.15        |
+| audioBufferToWav > 30 sec stereo @ 44100                             | 45.3501       |
+
+### Internal Composition
+
+| Benchmark                                                           | Ops/sec       |
+| ------------------------------------------------------------------- | ------------- |
+| resolvePluginRefs > 5 bare Plugin instances (identity pass-through) | 17,667,837.72 |
+| resolvePluginRefs > 5 PluginRef with opts + .with() merging         | 3,576,738.76  |
+| resolvePluginRefs > 5 PluginRef with defaults (no registry lookup)  | 12,297,027.48 |
+| resolvePipeline > first match (image → photos)                      | 9,767,403.92  |
+| resolvePipeline > nested match (video → media → videos)             | 11,194,994.59 |
+| resolvePipeline > no match (text → null)                            | 14,504,259.50 |
+| validatePipeline > validatePipeline (valid)                         | 2,578,393.56  |
+| validatePipeline > validatePipeline (nested, depth 4)               | 1,952,123.77  |
+| compose / stage > stage() by id+run                                 | 25,084,718.00 |
+| compose / stage > compose() 3 defs                                  | 10,150,873.63 |
+| sharedGet / sharedSet > sharedSet + sharedGet                       | 17,049,411.86 |
+| createTimingMiddleware > wrap and run — no callback                 | 2,780,357.95  |
+| createTimingMiddleware > wrap and run — with callback               | 2,804,639.10  |
+| Pipeline factory > Pipeline() — 3 stages                            | 23,113,901.77 |
+| flattenPipeline > 10 flat stages                                    | 5,349,470.22  |
+| flattenPipeline > 3 nested sub-pipelines (depth 3)                  | 5,235,592.02  |
+| runPipelineFrom > 3 stages via factory                              | 811,245.66    |
+
+### Plugins (Individual)
+
+| Benchmark                                               | Ops/sec       |
+| ------------------------------------------------------- | ------------- |
+| Plugin class > new Plugin() with run shorthand          | 25,463,548.73 |
+| Plugin class > Plugin.supports()                        | 33,299,581.20 |
+| Plugin class > Plugin.with()                            | 14,702,915.94 |
+| Plugin class > Plugin.with() with instanceId            | 10,239,614.87 |
+| Plugin class > Plugin.createStages()                    | 2,745,437.45  |
+| PluginProvider > new PluginProvider()                   | 1,834,880.12  |
+| PluginProvider > PluginProvider camelCase method        | 1,778,599.36  |
+| PluginProvider > PluginProvider.getPlugin() — found     | 1,835,791.50  |
+| PluginProvider > PluginProvider.getPlugin() — not found | 1,858,710.38  |
+
+### Plugins (Pipeline Composition)
+
+| Benchmark                                                     | Ops/sec      |
+| ------------------------------------------------------------- | ------------ |
+| runPipeline > 7 async stages (like real pipeline)             | 116.67       |
+| runPipeline > 7 stages with half skipped (when returns false) | 210.79       |
+| runPipeline > stage error → onError fallback                  | 281.38       |
+| runPipeline > stage error → onError skip                      | 285.67       |
+| pipeline control flow > skipGroup                             | 1,558,728.61 |
+| pipeline control flow > skipRemaining                         | 2,393,762.76 |
+| pipeline control flow > removeFromQueue                       | 2,353,498.59 |
+| parallel stages > 3 parallel stages                           | 884,245.03   |
+| dependsOn > 2 stages with dependsOn                           | 1,322,033.43 |
+
+<!-- benchmarks:end -->

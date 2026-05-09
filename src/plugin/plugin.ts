@@ -5,8 +5,7 @@ import type { PipelineContext, PipelineResult, PipelineSource, PipelineStage } f
 /**
  * A processing plugin that contributes pipeline stages for specific file types.
  *
- * This is the single canonical way to create plugins — replaces both
- * `definePlugin()` and ad-hoc factory functions.
+ * This is the single canonical way to create plugins.
  *
  * @typeParam TOpts - The shape of plugin options.
  *
