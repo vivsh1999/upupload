@@ -12,11 +12,19 @@ jobs:
       contents: write # Required for committing and pushing updates back to main
 
     steps:
+      - name: Generate App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: main # Check out main branch instead of detached tag
-          fetch-depth: 0 # Required to force update the tag later
+          token: ${{ steps.app-token.outputs.token }}
+          ref: main
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
