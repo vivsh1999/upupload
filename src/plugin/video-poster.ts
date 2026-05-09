@@ -61,7 +61,7 @@ export interface VideoPosterPluginOptions {
  * videoPoster.with({ variant: "thumb", maxEdge: 320 }) // smaller variant
  * ```
  */
-export const videoPoster = new Plugin<VideoPosterPluginOptions>({
+export const videoPoster: Plugin<VideoPosterPluginOptions> = new Plugin<VideoPosterPluginOptions>({
   id: "video-poster",
   name: "Video Poster Plugin",
   options: { variant: "poster", maxEdge: 640 },

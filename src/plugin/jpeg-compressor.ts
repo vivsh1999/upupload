@@ -53,66 +53,67 @@ export interface JpegCompressorPluginOptions {
  * jpegCompressor.with({ variant: "thumbnail", quality: 78, maxLongEdge: 320, maxSizeMB: 0.25 })
  * ```
  */
-export const jpegCompressor = new Plugin<JpegCompressorPluginOptions>({
-  id: "jpeg-compressor",
-  name: "JPEG Compressor Plugin",
-  options: { variant: "outputFile", quality: 1, maxLongEdge: -1, maxSizeMB: 1, debug: false },
-  supports: (file) => isAnyImage(file),
-  run: async (input, pluginOpts, classif, ctx) => {
-    const stemName = classif.stemName;
-    const variantName = pluginOpts.variant ?? "outputFile";
-    const q = Math.min(100, Math.max(1, pluginOpts.quality)) / 100;
-    const maxWH = pluginOpts.maxLongEdge === -1 ? undefined : pluginOpts.maxLongEdge;
+export const jpegCompressor: Plugin<JpegCompressorPluginOptions> =
+  new Plugin<JpegCompressorPluginOptions>({
+    id: "jpeg-compressor",
+    name: "JPEG Compressor Plugin",
+    options: { variant: "outputFile", quality: 1, maxLongEdge: -1, maxSizeMB: 1, debug: false },
+    supports: (file) => isAnyImage(file),
+    run: async (input, pluginOpts, classif, ctx) => {
+      const stemName = classif.stemName;
+      const variantName = pluginOpts.variant ?? "outputFile";
+      const q = Math.min(100, Math.max(1, pluginOpts.quality)) / 100;
+      const maxWH = pluginOpts.maxLongEdge === -1 ? undefined : pluginOpts.maxLongEdge;
 
-    if (classif.isSvg) {
-      return {
-        artifacts: [],
-        info: [warning("SVG files cannot be compressed to JPEG.", "svg_skipped")],
-        removeFromQueue: false,
-      };
-    }
+      if (classif.isSvg) {
+        return {
+          artifacts: [],
+          info: [warning("SVG files cannot be compressed to JPEG.", "svg_skipped")],
+          removeFromQueue: false,
+        };
+      }
 
-    const sourceFile =
-      (ctx.shared.get(PIPELINE_CURRENT_KEY) as File | undefined) ??
-      (ctx.shared.get(R2J_SHARED_KEY) as File | undefined) ??
-      (input.file as File);
+      const sourceFile =
+        (ctx.shared.get(PIPELINE_CURRENT_KEY) as File | undefined) ??
+        (ctx.shared.get(R2J_SHARED_KEY) as File | undefined) ??
+        (input.file as File);
 
-    const imageCompression = await loadImageCompression();
-    try {
-      const compressed = await imageCompression(sourceFile, {
-        maxSizeMB: pluginOpts.maxSizeMB,
-        maxWidthOrHeight: maxWH ?? 16384,
-        useWebWorker: true,
-        maxIteration: 12,
-        fileType: "image/jpeg",
-        initialQuality: q,
-      });
-      const jpegFile = new File(
-        [compressed],
-        variantName.endsWith(".jpg") ? variantName : `${stemName}.${variantName}.jpg`,
-        { type: "image/jpeg", lastModified: Date.now() },
-      );
-      return {
-        artifacts: [
-          artifact(variantName, jpegFile, jpegFile.name, jpegFile.type, {
-            relativePath: input.relativePath,
-          }),
-        ],
-        info: [],
-        removeFromQueue: false,
-      };
-    } catch {
-      return {
-        artifacts: [],
-        info: [
-          warning(`Could not produce "${variantName}" for "${input.name}".`, "variant_failed"),
-        ],
-        removeFromQueue: false,
-      };
-    }
-  },
-  preload: () => preloadImageCompression(),
-});
+      const imageCompression = await loadImageCompression();
+      try {
+        const compressed = await imageCompression(sourceFile, {
+          maxSizeMB: pluginOpts.maxSizeMB,
+          maxWidthOrHeight: maxWH ?? 16384,
+          useWebWorker: true,
+          maxIteration: 12,
+          fileType: "image/jpeg",
+          initialQuality: q,
+        });
+        const jpegFile = new File(
+          [compressed],
+          variantName.endsWith(".jpg") ? variantName : `${stemName}.${variantName}.jpg`,
+          { type: "image/jpeg", lastModified: Date.now() },
+        );
+        return {
+          artifacts: [
+            artifact(variantName, jpegFile, jpegFile.name, jpegFile.type, {
+              relativePath: input.relativePath,
+            }),
+          ],
+          info: [],
+          removeFromQueue: false,
+        };
+      } catch {
+        return {
+          artifacts: [],
+          info: [
+            warning(`Could not produce "${variantName}" for "${input.name}".`, "variant_failed"),
+          ],
+          removeFromQueue: false,
+        };
+      }
+    },
+    preload: () => preloadImageCompression(),
+  });
 
 /**
  * Create a JPEG/PNG/WebP compressor plugin with the given options.

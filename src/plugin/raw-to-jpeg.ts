@@ -22,7 +22,7 @@ export interface RawToJpegPluginOptions {
  * rawToJpeg.with({ debug: true })                   // with debug logging
  * ```
  */
-export const rawToJpeg = new Plugin<RawToJpegPluginOptions>({
+export const rawToJpeg: Plugin<RawToJpegPluginOptions> = new Plugin<RawToJpegPluginOptions>({
   id: "raw-to-jpeg",
   name: "RAW to JPEG Plugin",
   options: { debug: false },
