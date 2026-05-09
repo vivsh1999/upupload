@@ -278,16 +278,149 @@ const classif = ctx.shared.get(PIPELINE_CLASSIF_KEY) as FileClassification;
 ctx.shared.set(PIPELINE_CURRENT_KEY, processedFile);
 ```
 
-## Plugin Test Utilities
+## Testing Custom Plugins
+
+Use the test utilities to unit-test your plugin without running a full pipeline:
 
 ```ts
+import { Plugin } from "@vivsh1999/upupload/plugins";
+import { artifact, emptyResult } from "@vivsh1999/upupload/core";
 import {
   mockPipelineSource,
   mockPipelineContext,
   mockFileClassification,
 } from "@vivsh1999/upupload/plugins/testing";
 
+// Mock the inputs your plugin receives
 const source = mockPipelineSource({ name: "photo.cr3" });
 const ctx = mockPipelineContext();
 const classif = mockFileClassification({ ext: ".cr3", mime: "image/x-canon-cr3" });
+
+// Invoke createStages directly
+const stages = myPlugin.createStages(source, myPlugin.options, classif, ctx);
+const result = await stages[0]!.run(source, ctx);
+
+expect(result.artifacts).toHaveLength(1);
+expect(result.artifacts[0]!.variant).toBe("output");
 ```
+
+- `mockPipelineSource(overrides?)` — creates a `PipelineSource` with sensible defaults
+- `mockPipelineContext(overrides?)` — creates a `PipelineContext` with a fresh `Map` for `shared`
+- `mockFileClassification(overrides?)` — creates a `FileClassification` with defaults
+
+For integration tests, use `runDefaultBrowserPipeline` with your plugin registered:
+
+```ts
+import { runDefaultBrowserPipeline } from "@vivsh1999/upupload/browser";
+
+const result = await runDefaultBrowserPipeline(
+  { file, name: "test.png", type: "image/png" },
+  {},
+  { plugins: [myPlugin.with({ quality: 80 })] },
+);
+expect(result.artifacts.length).toBeGreaterThan(1); // original + your artifact
+```
+
+## Error Handling in Plugins
+
+A plugin stage can provide an `onError` handler by overriding `createStages`:
+
+```ts
+new Plugin({
+  id: "fragile-processor",
+  options: { timeout: 5000 },
+  supports: (file) => file.type === "image/webp",
+  createStages: (input, opts, classif, ctx) => [
+    {
+      id: "fragile-processor",
+      run: async () => {
+        // may throw
+      },
+      onError: async (error, input, ctx) => {
+        // Log the error
+        ctx.log("error", `Processing failed: ${error}`);
+
+        // Option A: Skip the stage gracefully
+        return { action: "skip", info: { level: "warn", message: "Skipped", code: "SKIP" } };
+
+        // Option B: Fall back to original input
+        return { action: "fallback", value: { artifacts: [], info: [], removeFromQueue: false } };
+
+        // Option C: Retry up to 3 times with 1s delay
+        return { action: "retry", maxRetries: 3, delayMs: 1000 };
+
+        // Option D: Re-throw (pipeline fails)
+        return { action: "throw" };
+      },
+    },
+  ],
+});
+```
+
+## Publishing a Plugin
+
+If you've built a reusable plugin, publish it as a standalone npm package so others can install it.
+
+### Package Structure
+
+```
+my-plugin/
+├── src/
+│   ├── index.ts        # @module + export Plugin instance
+│   └── index.test.ts   # tests
+├── package.json        # name like "upupload-plugin-watermark"
+├── jsr.json            # (optional) for JSR publishing
+├── tsconfig.json
+└── README.md
+```
+
+### Checklist
+
+1. **Name your plugin** with a recognizable prefix (e.g. `upupload-plugin-*` for npm)
+2. **Export a `Plugin` instance** using the `Plugin` class — consumers configure it via `.with()`
+3. **Declare `sharedKeys`** so downstream plugins can reference your context keys without string literals
+4. **Document `supports()` behavior** — what file types/names/MIME types your plugin handles
+5. **Add `@module` JSDoc** to your entrypoint file for JSR compatibility
+6. **Tree-shakeable imports** — add conditional `exports` in `package.json` so consumers can import only your plugin
+7. **Write tests** using the [test utilities](#testing-custom-plugins) above
+8. **Document peer dependencies** — list any runtime deps users must install (e.g. `heic-decode`)
+9. **Open-source it** — attach a license (MIT recommended), add a README, and publish to npm
+
+### Plugin Contract for Published Plugins
+
+| Aspect | Requirement |
+|---|---|
+| `id` | Globally unique, kebab-case (e.g. `"awesome-filter"`) |
+| `name` | Human-readable (e.g. `"Awesome Filter Plugin"`) |
+| `supports()` | Accurate classifier — prefer MIME checks over extension checks |
+| `run()` / `createStages()` | Must return `PipelineResult` — use `emptyResult()` / `artifact()` helpers |
+| `sharedKeys` | Declare every key the plugin writes to shared context |
+| `after` / `before` | Declare ordering constraints relative to other known plugin IDs |
+| `options` | Sensible defaults — the plugin should work with `.with({})` (no overrides) |
+| `preload()` | Pre-warm WASM decoders or other expensive async setup |
+
+### Submission to This Repo
+
+To include your plugin in this repo's built-in set:
+
+1. Create the file in `src/plugin/` (e.g. `src/plugin/my-plugin.ts`)
+2. Export a `Plugin` instance
+3. Add the export to `src/plugin/index.ts`
+4. Add the import path to `package.json` `exports` and `jsr.json` `exports`
+5. Write tests in `src/plugin/my-plugin.test.ts`
+6. Add JSDoc `@module` at the top and JSDoc on all exported symbols
+
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for the full contribution process.
+
+## Best Practices
+
+- **Prefer the `run` shorthand** — it's less boilerplate than `createStages` for single-stage plugins
+- **Use `with()` not factories** — consumers expect the `.with()` pattern for configuring plugins
+- **Always provide `sharedKeys`** — even if no downstream plugin uses them yet, it documents your shared context contract
+- **Use `emptyResult()`** for virtual/side-effect-only stages (like decoders that write to shared context without producing an artifact)
+- **Use `artifact()` helper** — ensures the shape is correct and `filetype` is auto-filled from the blob
+- **Don't mutate the input file** — produce a new `Blob` or `File` for each artifact
+- **Handle cancellation** — check `ctx.signal?.aborted` in long-running operations
+- **Prefer MIME checks** in `supports()` — they're more reliable than extension checks
+- **Use `_` prefix** for internal helper files (not exported from the plugin barrel)
+- **Install heavy deps lazily** — use dynamic `import()` at runtime rather than static imports

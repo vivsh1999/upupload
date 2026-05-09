@@ -314,7 +314,6 @@ It is also used internally by `useMediaUpload` with `tuning.maxConcurrency`.
 
 - `src/plugin/types.ts` — `ProcessingPlugin<TOpts>`, `FileClassification`, `sharedKeys`
 - `src/plugin/plugin.ts` — `Plugin` class (canonical way to create plugins; supports `run` shorthand, `.with({}, { instanceId })`)
-- `src/plugin/definePlugin.ts` — Legacy shorthand (delegates to `Plugin`)
 - `src/plugin/raw-to-jpeg.ts` — RAW/HEIC/TIFF decoder plugin
 - `src/plugin/jpeg-compressor.ts` — JPEG/PNG/WebP compressor plugin
 - `src/plugin/video-poster.ts` — Video poster frame plugin

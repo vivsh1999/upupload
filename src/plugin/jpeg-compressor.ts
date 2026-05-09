@@ -1,8 +1,7 @@
 /** @module plugins/jpeg-compressor */
 import { fileExtensionLower, RASTER_IMAGE_EXTENSIONS, RAW_EXTENSIONS } from "../browser/allowlist";
-import { PIPELINE_CURRENT_KEY } from "../browser/pipeline-utils";
+import { PIPELINE_CURRENT_KEY } from "../core/constants";
 import { Plugin } from "./plugin";
-import { R2J_SHARED_KEY } from "./raw-to-jpeg";
 import { warning, artifact } from "../core/result";
 
 type ImageCompressionFn = (
@@ -73,10 +72,7 @@ export const jpegCompressor: Plugin<JpegCompressorPluginOptions> =
         };
       }
 
-      const sourceFile =
-        (ctx.shared.get(PIPELINE_CURRENT_KEY) as File | undefined) ??
-        (ctx.shared.get(R2J_SHARED_KEY) as File | undefined) ??
-        (input.file as File);
+      const sourceFile = (ctx.shared.get(PIPELINE_CURRENT_KEY) as File | undefined) ?? input.file;
 
       const imageCompression = await loadImageCompression();
       try {
@@ -88,10 +84,11 @@ export const jpegCompressor: Plugin<JpegCompressorPluginOptions> =
           fileType: "image/jpeg",
           initialQuality: q,
         });
+        const now = Date.now();
         const jpegFile = new File(
           [compressed],
           variantName.endsWith(".jpg") ? variantName : `${stemName}.${variantName}.jpg`,
-          { type: "image/jpeg", lastModified: Date.now() },
+          { type: "image/jpeg", lastModified: now },
         );
         return {
           artifacts: [
@@ -115,23 +112,3 @@ export const jpegCompressor: Plugin<JpegCompressorPluginOptions> =
     preload: () => preloadImageCompression(),
   });
 
-/**
- * Create a JPEG/PNG/WebP compressor plugin with the given options.
- *
- * This is a convenience wrapper over {@link jpegCompressor}.`.with()`:
- *
- * @deprecated Use `jpegCompressor.with(opts)` instead.
- *
- * ```ts
- * // Before:
- * createJpegCompressorPlugin({ quality: 80, maxSizeMB: 1 })
- *
- * // After:
- * jpegCompressor.with({ quality: 80, maxSizeMB: 1 })
- * ```
- */
-export function createJpegCompressorPlugin(
-  opts: JpegCompressorPluginOptions,
-): Plugin<JpegCompressorPluginOptions> {
-  return jpegCompressor.with(opts);
-}

@@ -343,12 +343,13 @@ For larger applications you can define **multiple pipeline definitions** — eac
 The `supports()` classifier on a pipeline is optional. When omitted, the pipeline matches all files; filtering happens at the plugin level via each plugin's own `supports()` method.
 
 ```ts
+import { fileExtensionLower, RAW_EXTENSIONS, VIDEO_EXTENSIONS, AUDIO_EXTENSIONS } from "@vivsh1999/upupload/browser";
 import { PluginProvider, type PipelineDef } from "@vivsh1999/upupload/browser";
-import {
-  isCameraRawImage,
-  isVideoLike,
-  isAudioLike,
-} from "@vivsh1999/upupload/browser";
+
+const ext = (f: { name: string }) => fileExtensionLower(f.name);
+const isRaw = (f: { name: string }) => RAW_EXTENSIONS.has(ext(f));
+const isVideo = (f: { name: string }) => VIDEO_EXTENSIONS.has(ext(f));
+const isAudio = (f: { name: string }) => AUDIO_EXTENSIONS.has(ext(f));
 
 // PluginProvider — plugins with defaults, fully typed
 const pp = new PluginProvider([
@@ -364,7 +365,7 @@ const pipelines: PipelineDef[] = [
     pipelines: [
       {
         id: "raw-photo",
-        supports: (f) => isCameraRawImage(f),
+        supports: (f) => isRaw(f),
         plugins: [
           pp.rawToJpeg(),
           pp.jpegCompressor({ variant: "client-proof", quality: 85, maxLongEdge: 2560 }),
@@ -372,7 +373,7 @@ const pipelines: PipelineDef[] = [
       },
       {
         id: "raster-photo",
-        supports: (f) => !isCameraRawImage(f) && !isVideoLike(f) && !isAudioLike(f),
+        supports: (f) => !isRaw(f) && !isVideo(f) && !isAudio(f),
         plugins: [
           pp.jpegCompressor({ variant: "client-proof", quality: 85, maxLongEdge: 2560 }),
         ],

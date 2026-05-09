@@ -30,9 +30,9 @@ export function preloadRawDecoder() {
   void getLibRawCtor();
 }
 
-function hasOffscreenCanvas() {
-  return typeof OffscreenCanvas !== "undefined";
-}
+const HAS_OFFSCREEN_CANVAS = typeof OffscreenCanvas !== "undefined";
+
+const NOOP_LOG: (message: string, extra?: unknown) => void = () => {};
 
 function rgbaImageDataFromRgbOrRgba(
   pixels: Uint8ClampedArray | Uint8Array,
@@ -44,12 +44,18 @@ function rgbaImageDataFromRgbOrRgba(
   const need4 = n * 4;
   if (pixels.length < need3 && pixels.length < need4) return null;
 
-  const out = new Uint8ClampedArray(n * 4);
   if (pixels.length >= need4) {
+    if (pixels instanceof Uint8ClampedArray && pixels.length === need4) {
+      const img = new ImageData(width, height);
+      img.data.set(pixels);
+      return img;
+    }
+    const out = new Uint8ClampedArray(need4);
     out.set(pixels.subarray(0, need4));
     return new ImageData(out, width, height);
   }
 
+  const out = new Uint8ClampedArray(n * 4);
   let src = 0;
   let dst = 0;
   for (let i = 0; i < n; i++) {
@@ -74,15 +80,16 @@ async function rasterFileFromDecodedPixels(
   if (!imageData) return null;
 
   const q = Math.min(1, Math.max(0.7, outputQuality));
+  const now = Date.now();
 
-  if (hasOffscreenCanvas()) {
+  if (HAS_OFFSCREEN_CANVAS) {
     const canvas = new OffscreenCanvas(width, height);
     const ctx = canvas.getContext("2d");
     if (ctx) {
       ctx.putImageData(imageData, 0, 0);
       try {
         const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: q });
-        return new File([blob], filename, { type: "image/jpeg", lastModified: Date.now() });
+        return new File([blob], filename, { type: "image/jpeg", lastModified: now });
       } catch {}
     }
   }
@@ -97,7 +104,7 @@ async function rasterFileFromDecodedPixels(
     canvas.toBlob((b) => resolve(b), "image/jpeg", q),
   );
   if (!blob) return null;
-  return new File([blob], filename, { type: "image/jpeg", lastModified: Date.now() });
+  return new File([blob], filename, { type: "image/jpeg", lastModified: now });
 }
 
 const defaultLibRawOpenSettings: Record<string, unknown> = {
@@ -113,10 +120,9 @@ export async function decodeCameraRawToJpegFile(
   source: File,
   options: { outFilename: string; outputQuality?: number; debug?: boolean },
 ): Promise<File | null> {
-  const log = (message: string, extra?: unknown) => {
-    if (!options.debug) return;
-    console.info("[raw-decode]", message, extra ?? "");
-  };
+  const log: (message: string, extra?: unknown) => void = options.debug
+    ? (message, extra) => console.info("[raw-decode]", message, extra ?? "")
+    : NOOP_LOG;
 
   let raw: InstanceType<LibRawCtor> | null = null;
   try {
@@ -152,10 +158,7 @@ export async function decodeCameraRawToJpegFile(
     return null;
   } finally {
     if (raw) {
-      await raw.close?.();
-      await raw.delete?.();
-      await raw.recycle?.();
-      await raw.free?.();
+      await Promise.all([raw.close?.(), raw.delete?.(), raw.recycle?.(), raw.free?.()]);
     }
   }
 }

@@ -1,6 +1,6 @@
 /** @module plugins/raw-to-jpeg */
 import { fileExtensionLower, RAW_EXTENSIONS } from "../browser/allowlist";
-import { PIPELINE_CURRENT_KEY } from "../browser/pipeline-utils";
+import { PIPELINE_CURRENT_KEY } from "../core/constants";
 import { tryDecodeHeicToJpegFile, tryDecodeTiffToJpegFile } from "./_optionalDecoders";
 import { decodeCameraRawToJpegFile, preloadRawDecoder } from "./_rawDecode";
 import { Plugin } from "./plugin";
@@ -77,9 +77,3 @@ export const rawToJpeg: Plugin<RawToJpegPluginOptions> = new Plugin<RawToJpegPlu
   preload: () => preloadRawDecoder(),
 });
 
-/** @deprecated Use `rawToJpeg.with(opts)` instead. Will be removed in next major version. */
-export function createRawToJpegPlugin(
-  opts?: RawToJpegPluginOptions,
-): Plugin<RawToJpegPluginOptions> {
-  return rawToJpeg.with(opts ?? {});
-}

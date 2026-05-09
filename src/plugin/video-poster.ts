@@ -1,11 +1,10 @@
 /** @module plugins/video-poster */
 import { fileExtensionLower, VIDEO_EXTENSIONS } from "../browser/allowlist";
-import { stem } from "../browser/pipeline-utils";
+import { PIPELINE_CURRENT_KEY } from "../core/constants";
 import { Plugin } from "./plugin";
 import { warning, artifact } from "../core/result";
-import { PIPELINE_CURRENT_KEY } from "../browser/pipeline-utils";
 
-async function videoPosterFile(source: File, maxEdge: number): Promise<File | null> {
+async function videoPosterFile(source: File, maxEdge: number, stemName: string): Promise<File | null> {
   const url = URL.createObjectURL(source);
   try {
     const video = document.createElement("video");
@@ -36,7 +35,7 @@ async function videoPosterFile(source: File, maxEdge: number): Promise<File | nu
       canvas.toBlob((b) => resolve(b), "image/jpeg", 0.78),
     );
     if (!blob) return null;
-    return new File([blob], `${stem(source.name)}.poster.jpg`, {
+    return new File([blob], `${stemName}.poster.jpg`, {
       type: "image/jpeg",
       lastModified: Date.now(),
     });
@@ -70,10 +69,10 @@ export const videoPoster: Plugin<VideoPosterPluginOptions> = new Plugin<VideoPos
     const mime = (file.type ?? "").toLowerCase();
     return mime.startsWith("video/") || VIDEO_EXTENSIONS.has(ext);
   },
-  run: async (input, pluginOpts, _classif, ctx) => {
+  run: async (input, pluginOpts, classif, ctx) => {
     // Follow the pipeline:current convention so downstream plugins can chain
     const sourceFile = (ctx.shared.get(PIPELINE_CURRENT_KEY) as File | undefined) ?? input.file;
-    const poster = await videoPosterFile(sourceFile as File, pluginOpts.maxEdge ?? 640);
+    const poster = await videoPosterFile(sourceFile as File, pluginOpts.maxEdge ?? 640, classif.stemName);
     if (!poster) {
       return {
         artifacts: [],
@@ -98,9 +97,3 @@ export const videoPoster: Plugin<VideoPosterPluginOptions> = new Plugin<VideoPos
   },
 });
 
-/** @deprecated Use `videoPoster.with(opts)` instead. */
-export function createVideoPosterPlugin(
-  opts?: VideoPosterPluginOptions,
-): Plugin<VideoPosterPluginOptions> {
-  return videoPoster.with(opts ?? {});
-}

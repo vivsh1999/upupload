@@ -141,3 +141,55 @@ const stages = flattenPipeline(nodes, ctx, source);
 The original file is always included as artifact variant `"original"`. Filter it from the result if you don't want to upload it: `result.artifacts.filter(a => a.variant !== "original")`.
 
 Artifact variants are defined by plugins and are completely dynamic — any string is valid.
+
+## Handling Results (Upload Pattern)
+
+After the pipeline completes, iterate over `result.artifacts` to upload each produced file:
+
+```ts
+const result = await runDefaultBrowserPipeline(source, {}, { plugins });
+
+for (const artifact of result.artifacts) {
+  const form = new FormData();
+  form.append("file", artifact.file, artifact.filename);
+  form.append("variant", artifact.variant);
+
+  await fetch("/api/upload", {
+    method: "POST",
+    body: form,
+  });
+}
+```
+
+With the React hook, use `onFileComplete` — it fires once per file with all artifacts:
+
+```tsx
+useMediaUpload({
+  plugins: [jpegCompressor.with({ quality: 80 })],
+  onFileComplete: async (item) => {
+    for (const artifact of item.artifacts ?? []) {
+      await fetch("/api/upload", {
+        method: "PUT",
+        body: artifact.blob,
+        headers: { "Content-Type": "application/octet-stream" },
+      });
+    }
+  },
+});
+```
+
+The `onFileComplete` callback receives the full queue item including `meta` (from the `getMeta` option), so you can attach metadata to the upload payload.
+
+### Selective Upload
+
+Use `startUpload(fileIds)` to process only specific items from the queue:
+
+```tsx
+const { startUpload, queue } = useMediaUpload({ plugins });
+
+// Upload only completed items
+const completedIds = queue
+  .filter((item) => item.status === "complete")
+  .map((item) => item.id);
+startUpload(completedIds);
+```

@@ -2,6 +2,7 @@ import type {
   PipelineContext,
   PipelineDefinition,
   PipelineFactory,
+  PipelineLogger,
   PipelineNode,
   PipelineOptions,
   PipelineResult,
@@ -10,6 +11,8 @@ import type {
   StageMiddleware,
 } from "./types";
 import { runPipeline } from "./runPipeline";
+
+const NOOP_LOGGER: PipelineLogger = () => {};
 
 /**
  * Compose multiple pipeline definitions into one.
@@ -153,10 +156,8 @@ export function flattenPipeline(
 export function Pipeline(
   factory: (ctx: PipelineContext, source: PipelineSource) => PipelineNode[],
 ): PipelineFactory {
-  const fn = ((ctx: PipelineContext, source: PipelineSource) =>
-    factory(ctx, source)) as PipelineFactory;
-  fn.__pipeline = true;
-  return fn;
+  (factory as PipelineFactory).__pipeline = true;
+  return factory as PipelineFactory;
 }
 
 /**
@@ -171,7 +172,7 @@ export async function runPipelineFrom(
   factory: PipelineFactory,
   options?: PipelineOptions,
 ): Promise<PipelineResult> {
-  const log = options?.logger ?? (() => {});
+  const log = options?.logger ?? NOOP_LOGGER;
   const ctx: PipelineContext = {
     log,
     shared: new Map<string, unknown>(),

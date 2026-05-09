@@ -6,24 +6,7 @@ import { Plugin } from "../plugin/plugin";
 // Generic shared-context keys
 // ---------------------------------------------------------------------------
 
-/**
- * Well-known shared context key for the "current working file".
- *
- * Every stage that processes a file should write its output to this key.
- * Downstream stages that need the most recently processed file read from it.
- * This allows plugins to chain generically without knowing each other's keys.
- *
- * @example
- * ```ts
- * // Upstream stage (e.g. raw-to-jpeg):
- * ctx.shared.set(PIPELINE_CURRENT_KEY, decodedFile);
- *
- * // Downstream stage (e.g. watermark):
- * const current = ctx.shared.get(PIPELINE_CURRENT_KEY) as File | undefined
- *   ?? input.file;
- * ```
- */
-export const PIPELINE_CURRENT_KEY = "pipeline:current";
+export { PIPELINE_CURRENT_KEY } from "../core/constants";
 
 /**
  * Reserved shared context key for the file's {@link FileClassification}.
@@ -64,20 +47,22 @@ export const DEFAULT_BROWSER_PIPELINE_OPTIONS: BrowserPipelineOptions = {
  *
  * @example
  * ```ts
+ * import { fileExtensionLower, RAW_EXTENSIONS } from "@vivsh1999/upupload/browser";
+ *
  * const pipelines: PipelineDef[] = [
  *   {
  *     id: "raw-photo",
- *     supports: (f) => isCameraRawImage(f),
+ *     supports: (f) => RAW_EXTENSIONS.has(fileExtensionLower(f.name)),
  *     plugins: [rawToJpeg, jpegCompressor.with({ quality: 80 })],
  *   },
  *   {
  *     id: "raster-photo",
- *     supports: (f) => isSupportedMediaUpload(f) && !isCameraRawImage(f),
+ *     supports: (f) => !RAW_EXTENSIONS.has(fileExtensionLower(f.name)),
  *     plugins: [jpegCompressor.with({ quality: 80 })],
  *   },
  *   {
  *     id: "video",
- *     supports: (f) => isVideoLike(f),
+ *     // supports omitted — matches all files, videoPoster.supports() filters
  *     plugins: [videoPoster],
  *   },
  * ];
@@ -143,12 +128,20 @@ function isPluginInstance(p: PipelinePlugin): p is ProcessingPlugin<any> {
  * registry. Plugin references (`{ id, opts }`) are resolved to concrete
  * plugin instances with merged options; bare instances are returned as-is.
  */
+const EMPTY_PLUGINS: PipelinePlugin[] = [];
+
 export function resolvePluginRefs(
   plugins: PipelinePlugin[],
   registry?: ProcessingPlugin<any>[],
 ): ProcessingPlugin<any>[] {
-  return plugins.map((p) => {
-    if (isPluginInstance(p)) return p;
+  const count = plugins.length;
+  const result = new Array<ProcessingPlugin<any>>(count);
+  for (let i = 0; i < count; i++) {
+    const p = plugins[i]!;
+    if (isPluginInstance(p)) {
+      result[i] = p;
+      continue;
+    }
 
     const plugin = p.defaults ?? registry?.find((r) => r.id === p.id);
     if (!plugin) {
@@ -157,10 +150,23 @@ export function resolvePluginRefs(
           "Make sure to pass it via the `plugins` option.",
       );
     }
-    if (!p.opts || Object.keys(p.opts).length === 0) return plugin;
-    if (plugin instanceof Plugin) return plugin.with(p.opts as any);
-    return { ...plugin, options: { ...plugin.options, ...p.opts } };
-  });
+    if (!p.opts) {
+      result[i] = plugin;
+      continue;
+    }
+    let hasOpts = false;
+    for (const _k in p.opts) { hasOpts = true; break; }
+    if (!hasOpts) {
+      result[i] = plugin;
+      continue;
+    }
+    if (plugin instanceof Plugin) {
+      result[i] = plugin.with(p.opts as any);
+      continue;
+    }
+    result[i] = { ...plugin, options: { ...plugin.options, ...p.opts } };
+  }
+  return result;
 }
 
 /**
@@ -178,7 +184,7 @@ export function resolvePipeline(
       const child = resolvePipeline(def.pipelines, file, registry);
       if (child) return child;
     }
-    const resolved = resolvePluginRefs(def.plugins ?? [], registry);
+    const resolved = resolvePluginRefs(def.plugins ?? EMPTY_PLUGINS, registry);
     return { def, plugins: resolved };
   }
   return null;
@@ -226,9 +232,11 @@ export interface ValidationError {
 
 function collectPipelineIds(defs: PipelineDef[], path: string[], ids: Map<string, string[]>): void {
   for (const def of defs) {
-    const fullPath = [...path, def.id];
+    path.push(def.id);
+    const fullPath = [...path];
     const existing = ids.get(def.id);
     if (existing) {
+      path.pop();
       throw new Error(
         `Duplicate pipeline id "${def.id}" at [${fullPath.join(", ")}] ` +
           `— first defined at [${existing.join(", ")}]`,
@@ -236,8 +244,9 @@ function collectPipelineIds(defs: PipelineDef[], path: string[], ids: Map<string
     }
     ids.set(def.id, fullPath);
     if (def.pipelines) {
-      collectPipelineIds(def.pipelines, fullPath, ids);
+      collectPipelineIds(def.pipelines, path, ids);
     }
+    path.pop();
   }
 }
 
@@ -256,13 +265,15 @@ export function validatePipeline(defs: PipelineDef[]): void {
 
   function walk(defs: PipelineDef[], path: string[]): void {
     for (const def of defs) {
-      const fullPath = [...path, def.id];
+      path.push(def.id);
       const hasPlugins = def.plugins !== undefined && def.plugins.length > 0;
       const hasChildren = def.pipelines !== undefined && def.pipelines.length > 0;
 
       if (!hasPlugins && !hasChildren) {
+        const errorPath = path.join(", ");
+        path.pop();
         throw new Error(
-          `Pipeline "${def.id}" at [${fullPath.join(", ")}] has no plugins and no ` +
+          `Pipeline "${def.id}" at [${errorPath}] has no plugins and no ` +
             `sub-pipelines — it will never produce output.`,
         );
       }
@@ -271,8 +282,10 @@ export function validatePipeline(defs: PipelineDef[]): void {
         for (let i = 0; i < def.plugins.length; i++) {
           const p = def.plugins[i]!;
           if (!p) {
+            const errorPath = path.join(", ");
+            path.pop();
             throw new Error(
-              `Pipeline "${def.id}" at [${fullPath.join(", ")}] has a null/undefined ` +
+              `Pipeline "${def.id}" at [${errorPath}] has a null/undefined ` +
                 `plugin at index ${i}.`,
             );
           }
@@ -280,8 +293,9 @@ export function validatePipeline(defs: PipelineDef[]): void {
       }
 
       if (def.pipelines) {
-        walk(def.pipelines, fullPath);
+        walk(def.pipelines, path);
       }
+      path.pop();
     }
   }
 
