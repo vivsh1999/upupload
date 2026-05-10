@@ -38,13 +38,13 @@ const myPlugin = new Plugin<MyPluginOptions>({
 
 ### Required Fields
 
-| Field                   | Description                                                                                           |
-| ----------------------- | ----------------------------------------------------------------------------------------------------- |
-| `id`                    | Unique kebab-case string (e.g. `"jpeg-compressor"`)                                                   |
-| `name`                  | Human-readable name for logs                                                                          |
-| `options`               | Default options (typed as `TOpts`)                                                                    |
-| `supports(file)`        | Return `true` if the plugin handles this file — called with `{ name: string, type?: string \| null }` |
-| `createStages` or `run` | At least one processing function (see below)                                                          |
+| Field                   | Description                                                                                                          |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `id`                    | Unique kebab-case string (e.g. `"jpeg-compressor"`)                                                                  |
+| `name`                  | Human-readable name for logs                                                                                         |
+| `options`               | Default options (typed as `TOpts`)                                                                                   |
+| `supports(file)`        | Return `true` if the plugin handles this file — called with `{ name: string, type?: string \| null, size?: number }` |
+| `createStages` or `run` | At least one processing function (see below)                                                                         |
 
 ### Processing: `run` vs `createStages`
 

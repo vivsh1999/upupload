@@ -27,6 +27,7 @@ jpegCompressor.with({ quality: 80, maxLongEdge: 1920, maxSizeMB: 1 });
 
 // Video poster frame:
 videoPoster.with({ variant: "poster", maxEdge: 640 });
+videoPoster.with({ produceArtifact: false }); // Set context only, no artifact
 ```
 
 For multi-instance setups, use `instanceId` to disambiguate:
@@ -50,17 +51,36 @@ interface UploadOptions {
   optimizedMaxSizeMB?: number; // default: 1
   saveOriginal?: boolean; // default: false
   onArtifact?: (result: PipelineResult) => void | Promise<void>;
+  uploadArtifact?: (artifact: {
+    variant: string;
+    file: Blob;
+    filename: string;
+    filetype: string;
+  }) => void | Promise<void>;
 }
 
 const result = await upload(file, {
   quality: 80,
   saveOriginal: true,
-  onArtifact: async (result) => {
-    for (const a of result.artifacts) {
-      await fetch("/api/upload", { method: "POST", body: a.file });
-    }
+  uploadArtifact: async (artifact) => {
+    await fetch("/api/upload", { method: "POST", body: artifact.file });
   },
 });
 ```
 
 Note: The preset is a convenience wrapper. For full control, use `runDefaultBrowserPipeline` directly with your own plugin configuration.
+
+## React Hook Options
+
+For the full option reference, see [React Hook](./react.md). Key new options in 0.2.0:
+
+| Option                        | Type                      | Description                                      |
+| ----------------------------- | ------------------------- | ------------------------------------------------ |
+| `maxFileSize`                 | `number`                  | Maximum bytes per file.                          |
+| `maxTotalBatchSize`           | `number`                  | Maximum total bytes across all queued files.     |
+| `maxQueuedUploads`            | `number`                  | Backpressure limit for files in uploading state. |
+| `autoPreventTabClose`         | `boolean`                 | Prevent tab close while busy.                    |
+| `autoPauseOnOffline`          | `boolean`                 | Auto-pause on network disconnect.                |
+| `autoWakeLock`                | `boolean`                 | Keep screen awake while busy.                    |
+| `persistence`                 | `"memory" \| "indexeddb"` | Persist queue metadata across reloads.           |
+| `tuning.maxUploadConcurrency` | `number`                  | Separate upload concurrency limit.               |

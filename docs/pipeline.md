@@ -34,7 +34,13 @@ The accumulated `PipelineResult` supports:
 Import from `@vivsh1999/upupload/core` to reduce boilerplate:
 
 ```ts
-import { emptyResult, artifact, warning, infoMessage } from "@vivsh1999/upupload/core";
+import {
+  emptyResult,
+  artifact,
+  warning,
+  infoMessage,
+  fallbackResult,
+} from "@vivsh1999/upupload/core";
 
 // Return an empty result (common for virtual stages):
 return emptyResult();
@@ -52,6 +58,9 @@ return {
   info: [warning("Processing failed", "err_code")],
   removeFromQueue: false,
 };
+
+// Return a fallback value for error handlers:
+return { action: "fallback", value: fallbackResult() };
 ```
 
 ## Validating Pipeline Definitions
@@ -75,6 +84,8 @@ validatePipeline(defs);
 - **AbortSignal support** — pipelines can be cancelled mid-flight.
 - **Stage middleware** — `PipelineDefinition.middleware` transforms every stage (timing, monitoring, etc.).
 - **Progress events** — `PipelineOptions.onProgress` fires `start`/`end` per stage.
+- **Stage progress** — `PipelineOptions.onStageProgress` fires with per-stage 0-100 progress when stages call `ctx.reportProgress(n)`.
+- **Pause/Resume** — `PipelineOptions.onPauseCheck` yields between stages when the caller is paused.
 - **Retry on error** — error handler supports `{ action: "retry"; maxRetries; delayMs? }`.
 - **Accumulated result in `when()`** — stage guards receive the current accumulated `PipelineResult`.
 - **Parallel execution** — stages with `parallel: true` run concurrently in batches.
@@ -83,6 +94,30 @@ validatePipeline(defs);
 - **Skip remaining** — `skipRemaining: true` halts all remaining stages.
 - **Cycle detection** — circular `after`/`before` dependencies throw with the cycle path.
 - **Duplicate stage ID detection** — two plugins producing the same stage ID throw with disambiguation guidance.
+
+## Pipeline Context
+
+The `PipelineContext` object passed to every stage:
+
+| Property         | Type                                       | Description                                                   |
+| ---------------- | ------------------------------------------ | ------------------------------------------------------------- |
+| `log`            | `PipelineLogger`                           | Structured logging (`"debug"`, `"info"`, `"warn"`, `"error"`) |
+| `shared`         | `Map<string, unknown>`                     | Inter-stage communication bag                                 |
+| `signal`         | `AbortSignal \| undefined`                 | Cancellation signal                                           |
+| `reportProgress` | `((percent: number) => void) \| undefined` | Call to surface 0-100 progress during long stage operations   |
+
+## Pipeline Options
+
+The `PipelineOptions` object passed to `runPipeline`:
+
+| Option            | Type                                          | Description                                            |
+| ----------------- | --------------------------------------------- | ------------------------------------------------------ |
+| `logger`          | `PipelineLogger`                              | Custom logger (defaults to no-op)                      |
+| `signal`          | `AbortSignal`                                 | Cancellation signal                                    |
+| `onProgress`      | `(event: PipelineProgressEvent) => void`      | Fires `start`/`end` per stage                          |
+| `onStageProgress` | `(stageId: string, progress: number) => void` | Fires when stage calls `ctx.reportProgress(n)`         |
+| `onPauseCheck`    | `() => Promise<void>`                         | Called before each stage; yields when caller is paused |
+| `ctx`             | `PipelineContext`                             | External context to use instead of creating a new one  |
 
 ## Utilities
 
@@ -161,7 +196,29 @@ for (const artifact of result.artifacts) {
 }
 ```
 
-With the React hook, use `onFileComplete` — it fires once per file with all artifacts:
+With the React hook, use the `uploadAdapter` option for automatic upload integration:
+
+```tsx
+useFileUpload({
+  plugins: [jpegCompressor.with({ quality: 80 })],
+  uploadAdapter: async (artifact, { onProgress, signal }) => {
+    // Built-in progress tracking (90-100% range) and AbortSignal
+    await fetch("/api/upload", {
+      method: "PUT",
+      body: artifact.blob,
+      signal,
+    });
+  },
+  onFileProcessed: (item) => {
+    // Processing done, about to start upload
+  },
+  onFileComplete: (item) => {
+    // Both processing and upload done
+  },
+});
+```
+
+Or handle upload manually in `onFileComplete`:
 
 ```tsx
 useFileUpload({
@@ -171,7 +228,6 @@ useFileUpload({
       await fetch("/api/upload", {
         method: "PUT",
         body: artifact.blob,
-        headers: { "Content-Type": "application/octet-stream" },
       });
     }
   },

@@ -30,7 +30,7 @@ export interface ProcessingPlugin<TOpts = Record<string, unknown>> {
   readonly options: TOpts;
 
   /** Quick classifier — does this plugin handle this file? */
-  supports(file: { name: string; type?: string | null }): boolean;
+  supports(file: { name: string; type?: string | null; size?: number }): boolean;
 
   /**
    * Return pipeline stages for this file.

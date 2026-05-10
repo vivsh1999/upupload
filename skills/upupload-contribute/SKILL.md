@@ -43,6 +43,10 @@ src/
 │   ├── _optionalDecoders.ts # HEIC/TIFF dynamic imports (internal)
 │   ├── test-utils.ts       # mockPipelineSource, mockPipelineContext, mockFileClassification
 │   └── index.ts            # Barrel export
+├── react/             # React hook
+│   ├── index.ts       # useFileUpload hook, types
+│   ├── utils.ts       # Semaphore
+│   └── persistence.ts # IndexedDB queue persistence
 ├── browser/           # Browser-specific utils
 │   ├── pipeline.ts    # runDefaultBrowserPipeline, topological sort
 │   ├── pipeline-utils.ts  # PipelineDef, PluginRef, resolvePipeline, validatePipeline, file helpers

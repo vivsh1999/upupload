@@ -57,6 +57,12 @@ export type PipelineContext = {
   log: PipelineLogger;
   shared: Map<string, unknown>;
   signal?: AbortSignal;
+  /**
+   * Report progress (0-100) during a long-running stage operation.
+   * Stages can call this to surface internal progress (e.g. "RAW decoding: 45%").
+   * The pipeline engine delegates this to {@link PipelineOptions.onStageProgress}.
+   */
+  reportProgress?: (progress: number) => void;
 };
 
 /** Decision returned by a stage's `when` guard. */
@@ -66,6 +72,11 @@ export type StageDecision = { run: true } | { run: false; reason?: string; code?
 export type StageOnErrorAction<O> =
   | { action: "throw" }
   | { action: "skip"; info?: PipelineInfoMessage }
+  /**
+   * Return a fallback value instead of throwing.
+   * The value type `O` is the stage output type (typically {@link PipelineResult}).
+   * Use the {@link fallbackResult} helper to create a sensible default.
+   */
   | { action: "fallback"; value: O; info?: PipelineInfoMessage }
   | {
       action: "retry";
@@ -136,6 +147,16 @@ export type PipelineOptions = {
   logger?: PipelineLogger;
   signal?: AbortSignal;
   onProgress?: (event: PipelineProgressEvent) => void;
+  /**
+   * Fired during stage execution when the stage calls `ctx.reportProgress(n)`.
+   * Stages opt-in by calling `reportProgress` during long operations.
+   */
+  onStageProgress?: (stageId: string, progress: number) => void;
+  /**
+   * Called before each stage execution. When the implementation awaits a
+   * promise (e.g. a pause signal), the pipeline yields until resolved.
+   */
+  onPauseCheck?: () => Promise<void>;
   /**
    * External pipeline context to use instead of creating a new one.
    * Used internally by {@link runPipelineFrom} to share context

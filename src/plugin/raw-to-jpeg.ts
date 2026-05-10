@@ -38,7 +38,8 @@ export const rawToJpeg: Plugin<RawToJpegPluginOptions> = new Plugin<RawToJpegPlu
       mime === "image/heif" ||
       ext === ".tif" ||
       ext === ".tiff" ||
-      mime === "image/tiff"
+      mime === "image/tiff" ||
+      mime.startsWith("image/x-")
     );
   },
   run: async (input, pluginOpts, classif, ctx) => {

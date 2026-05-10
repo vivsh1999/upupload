@@ -30,3 +30,15 @@ export function warning(message: string, code?: string): PipelineInfoMessage {
 export function infoMessage(message: string, code?: string): PipelineInfoMessage {
   return { level: "info", message, code };
 }
+
+/**
+ * Create an empty {@link PipelineResult} for use as a fallback value in error handlers.
+ *
+ * @example
+ * ```ts
+ * onError: () => ({ action: "fallback", value: fallbackResult() })
+ * ```
+ */
+export function fallbackResult(): PipelineResult {
+  return { artifacts: [], info: [], removeFromQueue: false };
+}

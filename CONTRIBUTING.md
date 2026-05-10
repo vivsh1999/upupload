@@ -174,7 +174,7 @@ A plugin must satisfy the `ProcessingPlugin<TOpts>` interface:
 | `id`             | Unique string identifier (e.g. `"jpeg-compressor"`)                                                  |
 | `name`           | Human-readable name                                                                                  |
 | `options`        | Default options (typed as `TOpts`)                                                                   |
-| `supports(file)` | Returns `true` if the plugin can handle this file                                                    |
+| `supports(file)` | Returns `true` if the plugin can handle this file — receives `{ name, type?, size? }`                |
 | `run()`          | Async processing function — receives input, opts, classification, context                            |
 | `sharedKeys`     | Declares shared context key names so downstream plugins can reference them without hardcoded strings |
 | `preload?()`     | Optional preload hook called once before any file is processed                                       |

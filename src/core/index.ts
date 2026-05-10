@@ -12,5 +12,5 @@ export {
   runPipelineFrom,
   flattenPipeline,
 } from "./utils";
-export { emptyResult, artifact, warning, infoMessage } from "./result";
+export { emptyResult, artifact, warning, infoMessage, fallbackResult } from "./result";
 export { PIPELINE_CURRENT_KEY } from "./constants";

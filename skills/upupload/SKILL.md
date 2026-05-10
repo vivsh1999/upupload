@@ -191,12 +191,26 @@ interface UseFileUploadOptions<TMeta = void> {
   pipeline?: PipelineDef[];
   pipelineConfig?: Partial<BrowserPipelineOptions>;
   maxNumberOfFiles?: number;
-  tuning?: { maxConcurrency?: number }; // auto-detected from CPU count, capped at 4
+  maxFileSize?: number; // bytes per file
+  maxTotalBatchSize?: number; // total bytes across queue
+  maxQueuedUploads?: number; // upload backlog limit
+  autoPreventTabClose?: boolean;
+  autoPauseOnOffline?: boolean;
+  autoWakeLock?: boolean;
+  persistence?: "memory" | "indexeddb";
+  tuning?: {
+    maxConcurrency?: number; // pipeline concurrency
+    maxUploadConcurrency?: number; // upload adapter concurrency
+  };
+  uploadAdapter?: UploadAdapter; // generic upload function
+  getMeta?: (file: File) => TMeta;
+  getPipelineContextMeta?: () => Record<string, unknown>;
   onInfo?: (message: string) => void;
   onWarning?: (message: string) => void;
   onError?: (error: Error, context?: { fileName?: string }) => void;
+  onFileProcessed?: (item: FileUploadQueueItem<TMeta>) => void;
   onFileComplete?: (item: FileUploadQueueItem<TMeta>) => void;
-  getMeta?: (file: File) => TMeta; // attach metadata per file
+  onBatchComplete?: (stats: BatchCompleteStats) => void;
 }
 ```
 
@@ -206,23 +220,27 @@ interface UseFileUploadOptions<TMeta = void> {
 interface UseFileUploadResult<TMeta = void> {
   config: BrowserPipelineOptions;
   updateConfig: (patch: Partial<BrowserPipelineOptions>) => void;
-  queue: FileUploadQueueItem<TMeta>[]; // { id, name, file, status, progress, error, previewUrl?, meta?, artifacts? }
-  startUpload: (fileIds?: string[]) => Promise<void>; // selective processing
-  clear: () => void; // clears queue, revokes object URLs
-  retry: (fileId: string) => void; // resets errored item to "idle"
-  cancelUpload: (fileId: string) => void; // aborts in-flight + removes from queue
+  queue: FileUploadQueueItem<TMeta>[];
+  startUpload: (fileIds?: string[]) => Promise<void>;
+  clear: () => void;
+  retry: (fileId: string) => void;
+  retryUpload: (fileId: string) => void; // upload-only retry
+  cancelUpload: (fileId: string) => void;
   cancelAll: () => void;
+  pause: () => void; // pause pipeline
+  resume: () => void; // resume + auto-start queued
   isBusy: boolean;
+  isPaused: boolean;
   isDragOver: boolean;
-  getDropTargetProps: (props?) => object; // composable drag-and-drop
-  getFileInputProps: (props?) => object; // file input picker
-  getFolderInputProps: (props?) => object; // folder input picker
+  getDropTargetProps: (props?) => object;
+  getFileInputProps: (props?) => object;
+  getFolderInputProps: (props?) => object;
 }
 ```
 
 ### Statuses
 
-`"idle"` → `"processing"` → `"complete"` | `"error"`
+`"idle"` → `"processing"` → `"uploading"` → `"complete"` | `"error"`
 
 ### Multi-instance Plugins (e.g. multiple variants)
 

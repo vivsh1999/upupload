@@ -15,6 +15,17 @@ export interface UploadOptions {
   saveOriginal?: boolean;
   /** Called for each artifact produced by the pipeline. */
   onArtifact?: (result: PipelineResult) => void | Promise<void>;
+  /**
+   * Called for each individual artifact after the pipeline completes.
+   * Receives the artifact blob and metadata. Useful for uploading each
+   * artifact individually without needing to iterate the result yourself.
+   */
+  uploadArtifact?: (artifact: {
+    variant: string;
+    file: Blob;
+    filename: string;
+    filetype: string;
+  }) => void | Promise<void>;
 }
 
 /**
@@ -62,6 +73,17 @@ export async function upload(file: File, options?: UploadOptions): Promise<Pipel
   );
 
   await options?.onArtifact?.(result);
+
+  if (options?.uploadArtifact) {
+    for (const a of result.artifacts) {
+      await options.uploadArtifact({
+        variant: a.variant,
+        file: a.file instanceof Blob ? a.file : new Blob([a.file]),
+        filename: a.filename,
+        filetype: a.filetype,
+      });
+    }
+  }
 
   return result;
 }
