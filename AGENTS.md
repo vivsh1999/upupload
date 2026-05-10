@@ -1,3 +1,42 @@
+# Upgrade Routine
+
+When making changes, update ALL files in the affected dependency chain. The following tables map what to update for each type of change.
+
+## Source Code → Derivative File Map
+
+| If you change…                                     | Also update these files                                                                                                                                                                                                                                                       |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/core/types.ts` (pipeline types)               | `src/core/index.ts` (re-export), `src/plugin/types.ts` (imports types), `src/plugin/plugin.ts`, `src/plugin/test-utils.ts`, `src/browser/pipeline.ts`, `src/browser/pipeline-utils.ts`, `docs/pipeline.md`, `docs/plugins.md`                                                 |
+| `src/core/runPipeline.ts`                          | `src/browser/pipeline.ts` (calls it), `docs/pipeline.md`                                                                                                                                                                                                                      |
+| `src/core/result.ts`                               | `src/core/index.ts` (re-export), `docs/pipeline.md`, `docs/plugins.md`, `AGENTS.md` (result helpers section)                                                                                                                                                                  |
+| `src/plugin/types.ts` (ProcessingPlugin interface) | All `*.ts` files in `src/plugin/`, `src/browser/pipeline.ts`, `docs/plugins.md`, `AGENTS.md`, `examples/`, `skills/` (all SKILL.md files)                                                                                                                                     |
+| `src/plugin/plugin.ts` (Plugin class)              | All built-in plugins (`raw-to-jpeg.ts`, `jpeg-compressor.ts`, `video-poster.ts`), `src/plugin/plugin-provider.ts`, `docs/plugins.md`                                                                                                                                          |
+| Any built-in plugin (`src/plugin/*.ts`)            | `src/plugin/index.ts` (barrel), `package.json` `exports`, `jsr.json` `exports`, `docs/plugins.md`, `docs/configuration.md`, `AGENTS.md` (built-in plugins table)                                                                                                              |
+| `src/plugin/test-utils.ts`                         | `src/plugin/index.ts` (barrel), `docs/plugins.md`, `skills/` (all SKILL.md files reference mock utilities)                                                                                                                                                                    |
+| `src/react/index.ts` (hook / types)                | `docs/react.md`, `docs/pipeline.md` (upload pattern), `docs/configuration.md`, `AGENTS.md` (React hook section), `examples/tanstack-start/src/components/media-upload/types.ts` (if types added/removed), `skills/upupload/SKILL.md` (references UseFileUploadOptions/Result) |
+| `src/react/utils.ts` (Semaphore)                   | `docs/react.md`                                                                                                                                                                                                                                                               |
+| `src/react/persistence.ts`                         | `src/react/index.ts` (imports it), `docs/react.md`, `AGENTS.md` (file locations)                                                                                                                                                                                              |
+
+## Documentation / Meta → Source File Map
+
+| If you change…           | Also update these files                                                                                              |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `docs/*.md`              | `AGENTS.md` (keeps Architecture & API in sync with separate docs), `skills/` (if skill content mirrors doc patterns) |
+| `package.json` `exports` | `jsr.json` `exports` (must match), `docs/plugins.md` (import paths if adding plugin)                                 |
+| `jsr.json` `exports`     | `package.json` `exports` (must match)                                                                                |
+| `examples/`              | Ensure `npx tsc --noEmit` passes in the example project                                                              |
+
+## Verification Checklist
+
+After making ANY changes, run:
+
+```bash
+npx tsc --noEmit                           # Main project
+npx tsc --noEmit                            # (if changed) Examples
+pnpm run test                               # 106+ tests must pass
+pnpm run build                              # Dist must compile
+```
+
 # Documentation (JSR)
 
 JSR generates API documentation from JSDoc comments in source code. Two mandatory checks must pass:
@@ -60,6 +99,8 @@ The generic pipeline engine (`runPipeline`) executes ordered stages with:
 - **AbortSignal support** — pipelines and uploads can be cancelled mid-flight
 - **Stage middleware** — `PipelineDefinition.middleware` transforms every stage (timing, monitoring, etc.)
 - **Progress events** — `PipelineOptions.onProgress` fires `start`/`end` per stage
+- **Stage progress** — `ctx.reportProgress(percent)` allows stages to surface internal progress; wired via `PipelineOptions.onStageProgress`
+- **Pause/Resume** — `PipelineOptions.onPauseCheck` yields between stages when the caller is paused
 - **Retry on error** — error handler supports `{ action: "retry"; maxRetries; delayMs? }`
 - **Accumulated result in `when()`** — stage guards receive the current accumulated `PipelineResult`
 - **Parallel execution** — stages with `parallel: true` run concurrently in batches via `Promise.all`
@@ -78,6 +119,7 @@ sharedSet(map, key, value); // Type-safe write to shared context
 Pipeline(fn); // Nestable pipeline factory (callback-based)
 runPipelineFrom(source, factory); // Execute a Pipeline factory
 flattenPipeline(nodes, ctx, source); // Flatten nested pipelines into stages
+fallbackResult(); // Create empty PipelineResult for error handler fallback values
 ```
 
 ## Plugin System (`src/plugin/`)
@@ -87,7 +129,7 @@ interface ProcessingPlugin<TOpts = Record<string, unknown>> {
   readonly id: string;
   readonly name: string;
   readonly options: TOpts;
-  supports(file: { name: string; type?: string | null }): boolean;
+  supports(file: { name: string; type?: string | null; size?: number }): boolean;
   createStages(
     input: PipelineSource,
     opts: TOpts,
@@ -98,7 +140,20 @@ interface ProcessingPlugin<TOpts = Record<string, unknown>> {
 }
 ```
 
-`FileClassification` now includes `size`, `lastModified`, and optional `meta` bag.
+`FileClassification` includes `ext`, `mime`, `stemName`, `isVideo`, `isAudio`, `isSvg`, `size`, `lastModified`, and optional `meta` bag.
+
+### Plugin Context
+
+The `PipelineContext` passed to stage `run()` and `createStages()` includes:
+
+```ts
+{
+  log(level, message, extra?);   // Structured logging
+  shared: Map<string, unknown>;  // Inter-stage communication
+  signal?: AbortSignal;          // Cancellation
+  reportProgress?(percent);      // Report 0-100 progress during long operations
+}
+```
 
 ### Plugin Class (Canonical Way)
 
@@ -111,7 +166,8 @@ const myPlugin = new Plugin<{ quality: number }>({
   name: "My Plugin",
   options: { quality: 80 },
   supports(file) {
-    /* return true/false */
+    // file.name, file.type, file.size available
+    return file.type?.startsWith("image/") ?? false;
   },
   // run shorthand — no manual createStages/array wrapping needed
   run: async (input, opts, classif, ctx) => {
@@ -120,6 +176,7 @@ const myPlugin = new Plugin<{ quality: number }>({
     // ctx.shared: Map<string, unknown> — inter-plugin communication
     // ctx.log(level, message, extra?) — structured logging
     // ctx.signal?: AbortSignal — cancellation support
+    // ctx.reportProgress(percent) — surface progress during long ops
     return emptyResult();
   },
   // Declare shared context keys so downstream plugins can reference
@@ -151,7 +208,7 @@ import { rawToJpeg, jpegCompressor, videoPoster } from "@vivsh1999/upupload/plug
 
 `rawToJpeg` is a pure decoder — it decodes RAW/HEIC/TIFF to JPEG and places the result in the shared pipeline context. It produces no artifact.
 
-`jpegCompressor` reads the decoded file from shared context (if available) and compresses it into the configured variant. Register with defaults, then reference with overrides:
+`jpegCompressor` reads the decoded file from shared context (if available) and compresses it into the configured variant. Falls back to Canvas API when `browser-image-compression` is unavailable. Register with defaults, then reference with overrides:
 
 ```ts
 // Plugin registry (init with defaults via .with())
@@ -171,6 +228,8 @@ const registry = [
 ];
 ```
 
+`videoPoster` extracts a JPEG poster frame. Optionally accepts `produceArtifact: false` to skip emitting an artifact (sets `pipeline:current` only).
+
 > **Tip:** Published plugins use the `Plugin` class and the `.with()` pattern. Consumers write `plugin.with({ ... })` instead of factory functions.
 
 ### Writing a Custom Plugin
@@ -181,7 +240,8 @@ const myPlugin: ProcessingPlugin<MyOpts> = {
   name: "My Plugin",
   options: {},
   supports(file) {
-    /* return true/false */
+    // file.name, file.type, file.size available
+    return true;
   },
   run: async (input, opts, classif, ctx) => {
     // opts is typed as MyOpts
@@ -189,12 +249,25 @@ const myPlugin: ProcessingPlugin<MyOpts> = {
     // ctx.shared: Map<string, unknown> — inter-plugin communication
     // ctx.log(level, message, extra?) — structured logging
     // ctx.signal?: AbortSignal — cancellation support
+    // ctx.reportProgress(n) — surface progress 0-100
     return emptyResult();
   },
   // Declare shared context keys so downstream plugins can reference
   // them via plugin.sharedKeys.* instead of hardcoded strings
   sharedKeys: { output: "my-plugin:processed" },
 };
+```
+
+### Result Helpers
+
+```ts
+import { emptyResult, artifact, warning, infoMessage, fallbackResult } from "@vivsh1999/upupload/core";
+
+emptyResult();         // { artifacts: [], info: [], removeFromQueue: false }
+artifact(...);         // Single artifact builder
+warning(msg, code?);   // Warning info message
+infoMessage(msg, code?); // Info message
+fallbackResult();      // Empty result for onError fallback values
 ```
 
 ## React Hook (`src/react/`)
@@ -210,25 +283,133 @@ Key features:
 - **Generic over metadata** — `queue` items include `meta?: TMeta` from `getMeta: (file) => TMeta`
 - **`file: File` on every queue item** — no more DOM queries
 - **`cancelUpload(fileId)` / `cancelAll()`** — aborts in-flight pipelines and uploads
+- **`pause()` / `resume()`** — pauses in-flight pipeline execution between stages
+- **`retryUpload(fileId)`** — re-runs upload adapter only (no re-processing)
 - **`isDragOver` state** — composable drag-and-drop with enter/leave counter
-- **`tuning.maxConcurrency`** — concurrency-limited via `Semaphore` (auto-detected from CPU count)
+- **`tuning.maxConcurrency` / `tuning.maxUploadConcurrency`** — separate semaphores for processing and upload
 - **Preview URLs** — `previewUrl` and per-artifact `url` on queue items (auto-released)
 - **`startUpload(fileIds?)`** — selective processing of specific items
 - **Artifact blobs** — each artifact carries a `blob: Blob` for upload or display
-- **`onFileComplete`** — receives the full queue item with artifacts
-- **Statuses**: `"idle" | "processing" | "complete" | "error"` (no built-in upload transport)
+- **`onFileProcessed`** — fires after pipeline completes, before upload adapter
+- **`onFileComplete`** — fires after both pipeline and upload adapter resolve
+- **`onBatchComplete`** — cumulative stats when all files finish processing
+- **Statuses**: `"idle" | "processing" | "uploading" | "complete" | "error"`
+- **Upload adapter** — generic function type, user brings their own upload implementation
+- **`autoPauseOnOffline`** — auto-pauses on network disconnect
+- **`autoWakeLock`** — prevents screen sleep during long operations
+- **`autoPreventTabClose`** — prevents accidental tab close during processing
+- **`persistence: "indexeddb"`** — queue metadata survives page reload
+- **`maxQueuedUploads`** — backpressure limit for upload backlog
 - **`onWarning` wired** — error messages in queue trigger the callback
+
+### Options
+
+```ts
+interface UseFileUploadOptions<TMeta = void> {
+  plugins?: ProcessingPlugin<any>[];
+  pipeline?: PipelineDef[];
+  pipelineConfig?: Partial<BrowserPipelineOptions>;
+  maxNumberOfFiles?: number;
+  maxFileSize?: number; // Bytes per file
+  maxTotalBatchSize?: number; // Bytes total across queue
+  maxQueuedUploads?: number; // Upload backlog limit
+  autoPreventTabClose?: boolean;
+  autoPauseOnOffline?: boolean;
+  autoWakeLock?: boolean;
+  persistence?: "memory" | "indexeddb";
+  tuning?: {
+    maxConcurrency?: number; // Pipeline concurrency
+    maxUploadConcurrency?: number; // Upload adapter concurrency
+  };
+  uploadAdapter?: UploadAdapter; // Generic upload function
+  getMeta?: (file: File) => TMeta;
+  getPipelineContextMeta?: () => Record<string, unknown>;
+  onInfo?: (message: string) => void;
+  onWarning?: (message: string) => void;
+  onError?: (error: Error, context?: { fileName?: string }) => void;
+  onFileProcessed?: (item: FileUploadQueueItem<TMeta>) => void;
+  onFileComplete?: (item: FileUploadQueueItem<TMeta>) => void;
+  onBatchComplete?: (stats: BatchCompleteStats) => void;
+}
+```
+
+### Return Value
+
+```ts
+interface UseFileUploadResult<TMeta = void> {
+  config: BrowserPipelineOptions;
+  updateConfig: (patch: Partial<BrowserPipelineOptions>) => void;
+  queue: FileUploadQueueItem<TMeta>[];
+  startUpload: (fileIds?: string[]) => Promise<void>;
+  clear: () => void;
+  retry: (fileId: string) => void;
+  retryUpload: (fileId: string) => void;
+  cancelUpload: (fileId: string) => void;
+  cancelAll: () => void;
+  pause: () => void;
+  resume: () => void;
+  isBusy: boolean;
+  isPaused: boolean;
+  isDragOver: boolean;
+  getDropTargetProps: <T>(props?: T) => T & { onDrop; onDragOver; onDragEnter; onDragLeave };
+  getFileInputProps: <T>(props?: T) => T & { type: "file"; multiple: true };
+  getFolderInputProps: <T>(props?: T) => T & { type: "file"; multiple: true; webkitdirectory };
+}
+```
+
+### Queue Item
+
+```ts
+interface FileUploadQueueItem<TMeta = void> {
+  id: string;
+  name: string;
+  file: File;
+  status: "idle" | "processing" | "uploading" | "complete" | "error";
+  progress: number;
+  error?: string;
+  previewUrl?: string;
+  meta?: TMeta;
+  needsReselect?: boolean; // true if file blob lost (e.g. after page reload)
+  artifacts?: {
+    variant: string;
+    filename: string;
+    blob: Blob;
+    url?: string;
+  }[];
+}
+```
+
+### UploadAdapter
+
+```ts
+type UploadAdapter = (
+  artifact: { variant: string; blob: Blob; filename: string; filetype: string },
+  helpers: { onProgress: (progress: number) => void; signal?: AbortSignal },
+) => Promise<void>;
+```
+
+### BatchCompleteStats
+
+```ts
+interface BatchCompleteStats {
+  totalFiles: number; // Cumulative files across all batches
+  succeeded: number; // Files with status "complete"
+  failed: number; // Files with status "error"
+  totalBytes: number; // Cumulative bytes
+  totalTimeMs: number; // Elapsed since first batch started
+}
+```
 
 ## Semaphore Utility
 
 ```ts
-import { Semaphore } from "@vivsh1999/upupload/react"; // internal, re-exported
+import { Semaphore } from "@vivsh1999/upupload/react";
 
 const sem = new Semaphore(4); // max 4 concurrent
 await sem.run(() => fetch(...));
 ```
 
-It is also used internally by `useFileUpload` with `tuning.maxConcurrency`.
+Used internally by `useFileUpload` with `tuning.maxConcurrency` and `tuning.maxUploadConcurrency`.
 
 ## File Locations
 
@@ -236,7 +417,7 @@ It is also used internally by `useFileUpload` with `tuning.maxConcurrency`.
 
 - `src/core/types.ts` — All pipeline types
 - `src/core/runPipeline.ts` — Generic engine
-- `src/core/result.ts` — `emptyResult()`, `artifact()`, `warning()`, `infoMessage()` helpers
+- `src/core/result.ts` — `emptyResult()`, `artifact()`, `warning()`, `infoMessage()`, `fallbackResult()`
 - `src/core/utils.ts` — `compose`, `stage`, `createTimingMiddleware`
 - `src/core/index.ts` — Barrel
 
@@ -265,6 +446,7 @@ It is also used internally by `useFileUpload` with `tuning.maxConcurrency`.
 
 - `src/react/index.ts` — `useFileUpload` hook
 - `src/react/utils.ts` — `Semaphore` utility
+- `src/react/persistence.ts` — IndexedDB persistence helpers
 
 ### Server
 

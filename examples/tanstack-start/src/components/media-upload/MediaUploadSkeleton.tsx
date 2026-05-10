@@ -24,7 +24,7 @@ const defaultLabels: NonNullable<MediaUploadSkeletonProps["labels"]> = {
 
 function statusLabel(item: FileUploadQueueItem, lb: MediaUploadSkeletonProps["labels"]) {
   if (item.status === "processing") return lb?.processing ?? defaultLabels.processing;
-  if (item.status === "complete") return lb?.uploading ?? defaultLabels.uploading;
+  if (item.status === "uploading") return lb?.uploading ?? defaultLabels.uploading;
   return null;
 }
 

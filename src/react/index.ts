@@ -7,6 +7,7 @@ import type { PipelineSource } from "../core/types";
 import type { ProcessingPlugin } from "../plugin/types";
 import type { PipelineDef } from "../browser/pipeline";
 import { Semaphore } from "./utils";
+import { saveQueue, loadQueue, serializeForStorage } from "./persistence";
 
 export type { BrowserPipelineOptions, PipelineDef } from "../browser/pipeline";
 export { Plugin } from "../plugin/plugin";
@@ -18,6 +19,8 @@ export type { TypedPluginRef } from "../plugin/plugin-provider";
 export interface FileUploadTuningOptions {
   /** Maximum number of files processed concurrently. Auto-detected based on CPU count. */
   maxConcurrency?: number;
+  /** Maximum number of files uploading concurrently. Defaults to `maxConcurrency`. */
+  maxUploadConcurrency?: number;
 }
 
 /** A single file in the upload queue with processing state. */
@@ -25,7 +28,7 @@ export interface FileUploadQueueItem<TMeta = void> {
   id: string;
   name: string;
   file: File;
-  status: "idle" | "processing" | "complete" | "error";
+  status: "idle" | "processing" | "uploading" | "complete" | "error";
   progress: number;
   error?: string;
   previewUrl?: string;
@@ -36,6 +39,45 @@ export interface FileUploadQueueItem<TMeta = void> {
     blob: Blob;
     url?: string;
   }[];
+  /** When true, the file blob isn't available (e.g. restored from IndexedDB).
+   *  The UI should prompt the user to re-drop this file. */
+  needsReselect?: boolean;
+}
+
+/**
+ * Upload adapter — a user-supplied function that handles uploading a single artifact.
+ * Called by the hook when an `uploadAdapter` is configured. The adapter receives the
+ * artifact blob and can report upload progress back to the queue item.
+ *
+ * @param artifact - The artifact to upload (variant, blob, filename, filetype)
+ * @param helpers.onProgress - Call with a 0-100 value to update the queue item's progress
+ * @param helpers.signal - AbortSignal that fires when the upload is cancelled
+ */
+export type UploadAdapter = (
+  artifact: {
+    variant: string;
+    blob: Blob;
+    filename: string;
+    filetype: string;
+  },
+  helpers: {
+    onProgress: (progress: number) => void;
+    signal?: AbortSignal;
+  },
+) => Promise<void>;
+
+/** Aggregate statistics about a completed batch of file processing. */
+export interface BatchCompleteStats {
+  /** Total number of files processed across all batches. */
+  totalFiles: number;
+  /** Number of files that completed successfully. */
+  succeeded: number;
+  /** Number of files that failed. */
+  failed: number;
+  /** Total bytes across all processed files. */
+  totalBytes: number;
+  /** Elapsed time in ms since the first batch started. */
+  totalTimeMs: number;
 }
 
 export interface UseFileUploadOptions<TMeta = void> {
@@ -43,13 +85,61 @@ export interface UseFileUploadOptions<TMeta = void> {
   pipeline?: PipelineDef[];
   pipelineConfig?: Partial<BrowserPipelineOptions>;
   maxNumberOfFiles?: number;
+  /** Maximum file size in bytes. Files exceeding this are rejected. */
+  maxFileSize?: number;
+  /** Maximum total size in bytes across all queued files. Prevents batch OOM. */
+  maxTotalBatchSize?: number;
+  /** When true, prevents tab close while files are being processed. */
+  autoPreventTabClose?: boolean;
+  /** When true, auto-pauses processing on network offline, resumes on online. */
+  autoPauseOnOffline?: boolean;
+  /** When true, acquires a screen wake lock while files are being processed. */
+  autoWakeLock?: boolean;
+  /**
+   * Maximum number of files that can be in the "uploading" state at once.
+   * When exceeded, new file processing is deferred until upload slots free up.
+   */
+  maxQueuedUploads?: number;
+  /**
+   * Persistence mode for the upload queue.
+   * - `"memory"` (default): queue state is lost on page reload.
+   * - `"indexeddb"`: queue metadata is persisted to IndexedDB and restored
+   *   on reload. File blobs are not preserved — files with status other than
+   *   `"complete"` are reset to `"error"` on restore. The user must re-drop
+   *   files to re-process them.
+   */
+  persistence?: "memory" | "indexeddb";
   tuning?: FileUploadTuningOptions;
   onInfo?: (message: string) => void;
   onWarning?: (message: string) => void;
   onError?: (error: Error, context?: { fileName?: string }) => void;
+  /**
+   * Fires after pipeline processing completes for a file, before upload adapter runs.
+   * Use `onFileComplete` to get notified after the adapter resolves.
+   */
+  onFileProcessed?: (item: FileUploadQueueItem<TMeta>) => void;
+  /**
+   * Fires when a file is fully done — after pipeline processing (and upload adapter
+   * if configured). At this point `item.status === "complete"`.
+   */
   onFileComplete?: (item: FileUploadQueueItem<TMeta>) => void;
+  /** Fires when the system transitions from busy to idle with cumulative batch stats. */
+  onBatchComplete?: (stats: BatchCompleteStats) => void;
   /** Metadata factory called for each file added to the queue. */
   getMeta?: (file: File) => TMeta;
+  /**
+   * Upload adapter for uploading each artifact after processing completes.
+   * When provided, the hook calls this for every artifact and only marks the
+   * file as `"complete"` after all uploads finish. Progress during upload
+   * maps to the 90-100% range on the queue item.
+   */
+  uploadAdapter?: UploadAdapter;
+  /**
+   * Factory that returns metadata to inject into every file's pipeline context.
+   * Useful for propagating global state (auth tokens, project IDs, etc.) to
+   * pipeline plugins without closure threading.
+   */
+  getPipelineContextMeta?: () => Record<string, unknown>;
 }
 
 export interface UseFileUploadResult<TMeta = void> {
@@ -59,9 +149,14 @@ export interface UseFileUploadResult<TMeta = void> {
   startUpload: (fileIds?: string[]) => Promise<void>;
   clear: () => void;
   retry: (fileId: string) => void;
+  /** Re-run the upload adapter for a file that has artifacts but failed during upload. */
+  retryUpload: (fileId: string) => void;
   cancelUpload: (fileId: string) => void;
   cancelAll: () => void;
+  pause: () => void;
+  resume: () => void;
   isBusy: boolean;
+  isPaused: boolean;
   isDragOver: boolean;
   getDropTargetProps: <T extends Omit<HTMLAttributes<HTMLDivElement>, "onDrop" | "onDragOver">>(
     props?: T,
@@ -100,12 +195,23 @@ export function useFileUpload<TMeta = void>(
     pipeline,
     pipelineConfig,
     maxNumberOfFiles,
+    maxFileSize,
+    maxTotalBatchSize,
+    autoPreventTabClose,
     tuning,
     onInfo,
     onWarning,
     onError,
+    onFileProcessed,
     onFileComplete,
+    onBatchComplete,
     getMeta,
+    uploadAdapter,
+    getPipelineContextMeta,
+    persistence,
+    autoPauseOnOffline,
+    autoWakeLock,
+    maxQueuedUploads,
   } = options ?? {};
 
   const [config, setConfig] = useState<BrowserPipelineOptions>({
@@ -127,14 +233,38 @@ export function useFileUpload<TMeta = void>(
     semRef.current = new Semaphore(tuning?.maxConcurrency ?? defaultConcurrency());
   }, [tuning?.maxConcurrency]);
 
+  const uploadSemRef = useRef(
+    new Semaphore(tuning?.maxUploadConcurrency ?? tuning?.maxConcurrency ?? defaultConcurrency()),
+  );
+  useEffect(() => {
+    uploadSemRef.current = new Semaphore(
+      tuning?.maxUploadConcurrency ?? tuning?.maxConcurrency ?? defaultConcurrency(),
+    );
+  }, [tuning?.maxUploadConcurrency, tuning?.maxConcurrency]);
+
+  const batchStatsRef = useRef({ totalFiles: 0, totalBytes: 0 });
+  const batchStartRef = useRef(0);
+
+  const [isPaused, setIsPaused] = useState(false);
+  const pauseRef = useRef<{ paused: boolean; resolve: (() => void) | null }>({
+    paused: false,
+    resolve: null,
+  });
+
+  const restoredRef = useRef(false);
+
   const processOptionsRef = useRef({
     config,
     plugins,
     pipeline,
     onInfo,
     onWarning,
+    onFileProcessed,
     onFileComplete,
     onError,
+    onBatchComplete,
+    uploadAdapter,
+    getPipelineContextMeta,
   });
   processOptionsRef.current = {
     config,
@@ -142,8 +272,12 @@ export function useFileUpload<TMeta = void>(
     pipeline,
     onInfo,
     onWarning,
+    onFileProcessed,
     onFileComplete,
     onError,
+    onBatchComplete,
+    uploadAdapter,
+    getPipelineContextMeta,
   };
 
   const updateConfig = useCallback((patch: Partial<BrowserPipelineOptions>) => {
@@ -152,8 +286,37 @@ export function useFileUpload<TMeta = void>(
 
   const addFiles = useCallback(
     (fileList: FileList | File[]) => {
-      const fileArray = Array.from(fileList);
-      const sliced = maxNumberOfFiles != null ? fileArray.slice(0, maxNumberOfFiles) : fileArray;
+      const { onWarning: warn } = processOptionsRef.current;
+      let filtered = Array.from(fileList);
+
+      if (maxFileSize != null) {
+        filtered = filtered.filter((f) => {
+          if (f.size > maxFileSize) {
+            warn?.(
+              `"${f.name}" (${(f.size / 1024 / 1024).toFixed(1)} MB) exceeds the maximum file size of ${(maxFileSize / 1024 / 1024).toFixed(1)} MB.`,
+            );
+            return false;
+          }
+          return true;
+        });
+      }
+
+      if (maxTotalBatchSize != null) {
+        const currentTotal = queueRef.current.reduce((sum, q) => sum + q.file.size, 0);
+        let running = currentTotal;
+        filtered = filtered.filter((f) => {
+          running += f.size;
+          if (running > maxTotalBatchSize) {
+            warn?.(
+              `Adding "${f.name}" would exceed the total batch size limit of ${(maxTotalBatchSize / 1024 / 1024).toFixed(1)} MB.`,
+            );
+            return false;
+          }
+          return true;
+        });
+      }
+
+      const sliced = maxNumberOfFiles != null ? filtered.slice(0, maxNumberOfFiles) : filtered;
 
       const newItems: FileUploadQueueItem<TMeta>[] = [];
       for (const file of sliced) {
@@ -171,7 +334,7 @@ export function useFileUpload<TMeta = void>(
 
       setQueue((prev) => [...prev, ...newItems]);
     },
-    [maxNumberOfFiles, getMeta],
+    [maxNumberOfFiles, getMeta, maxFileSize, maxTotalBatchSize],
   );
 
   const getFileInputProps = useCallback(
@@ -261,8 +424,11 @@ export function useFileUpload<TMeta = void>(
         pipeline: currentPipeline,
         onInfo: currentOnInfo,
         onWarning: currentOnWarning,
+        onFileProcessed: currentOnFileProcessed,
         onFileComplete: currentOnFileComplete,
         onError: currentOnError,
+        uploadAdapter: currentUploadAdapter,
+        getPipelineContextMeta: currentGetPipelineContextMeta,
       } = processOptionsRef.current;
 
       const controller = new AbortController();
@@ -272,7 +438,9 @@ export function useFileUpload<TMeta = void>(
         if (controller.signal.aborted) return;
 
         setQueue((prev) =>
-          prev.map((q) => (q.id === item.id ? { ...q, status: "processing" as const } : q)),
+          prev.map((q) =>
+            q.id === item.id ? { ...q, status: "processing" as const, progress: 0 } : q,
+          ),
         );
 
         const source: PipelineSource = {
@@ -281,10 +449,31 @@ export function useFileUpload<TMeta = void>(
           type: file.type || "application/octet-stream",
         };
 
+        // Track stage progress for granular 0-90% range
+        let completedStages = 0;
+        let totalStages = 0;
+
+        const pipelineContextMeta = currentGetPipelineContextMeta?.();
+
         const result = await runDefaultBrowserPipeline(source, currentConfig, {
           plugins: currentPlugins,
           pipeline: currentPipeline,
           signal: controller.signal,
+          pipelineContextMeta,
+          onPauseCheck: async () => {
+            if (pauseRef.current.paused) {
+              await new Promise<void>((resolve) => {
+                pauseRef.current.resolve = resolve;
+              });
+            }
+          },
+          onStageProgress: (_stageId, progress) => {
+            if (totalStages === 0) return;
+            const overall = ((completedStages + progress / 100) / totalStages) * 90;
+            setQueue((prev) =>
+              prev.map((q) => (q.id === item.id ? { ...q, progress: Math.min(overall, 89) } : q)),
+            );
+          },
         });
 
         if (controller.signal.aborted) return;
@@ -314,6 +503,58 @@ export function useFileUpload<TMeta = void>(
           };
         });
 
+        // Save artifacts immediately so upload adapter errors preserve them
+        const processedItem: FileUploadQueueItem<TMeta> = {
+          ...item,
+          status: "processing" as const,
+          progress: 90,
+          artifacts: artifactPreviews,
+          previewUrl: artifactPreviews[0]?.url,
+        };
+        setQueue((prev) => prev.map((q) => (q.id === item.id ? processedItem : q)));
+        currentOnFileProcessed?.(processedItem);
+
+        // Upload artifacts if an adapter is configured
+        if (currentUploadAdapter && result.artifacts.length > 0) {
+          setQueue((prev) =>
+            prev.map((q) =>
+              q.id === item.id ? { ...q, status: "uploading" as const, progress: 90 } : q,
+            ),
+          );
+
+          // Acquire upload semaphore slot
+          await uploadSemRef.current.acquire();
+          try {
+            const total = result.artifacts.length;
+            for (let i = 0; i < total; i++) {
+              const a = result.artifacts[i]!;
+              const blob = a.file instanceof Blob ? a.file : new Blob([a.file]);
+              if (controller.signal.aborted) return;
+              await currentUploadAdapter(
+                {
+                  variant: a.variant,
+                  blob,
+                  filename: a.filename,
+                  filetype: a.filetype,
+                },
+                {
+                  onProgress: (p) => {
+                    const overall = 90 + ((i + p / 100) / total) * 10;
+                    setQueue((prev) =>
+                      prev.map((q) =>
+                        q.id === item.id ? { ...q, progress: Math.min(overall, 99) } : q,
+                      ),
+                    );
+                  },
+                  signal: controller.signal,
+                },
+              );
+            }
+          } finally {
+            uploadSemRef.current.release();
+          }
+        }
+
         const completedItem: FileUploadQueueItem<TMeta> = {
           ...item,
           status: "complete" as const,
@@ -330,7 +571,16 @@ export function useFileUpload<TMeta = void>(
         const message = err instanceof Error ? err.message : "Unknown error";
         setQueue((prev) =>
           prev.map((q) =>
-            q.id === item.id ? { ...q, status: "error" as const, error: message, progress: 0 } : q,
+            q.id === item.id
+              ? {
+                  ...q,
+                  status: "error" as const,
+                  error: message,
+                  progress: 0,
+                  // Preserve artifacts on error so retryUpload can re-use them
+                  artifacts: q.artifacts ?? undefined,
+                }
+              : q,
           ),
         );
         currentOnError?.(err instanceof Error ? err : new Error(message), {
@@ -343,28 +593,60 @@ export function useFileUpload<TMeta = void>(
     [],
   );
 
-  const startUpload = useCallback(async (fileIds?: string[]) => {
-    const items = fileIds
-      ? queueRef.current.filter((q) => fileIds.includes(q.id))
-      : queueRef.current;
+  const startUpload = useCallback(
+    async (fileIds?: string[]) => {
+      const items = fileIds
+        ? queueRef.current.filter((q) => fileIds.includes(q.id))
+        : queueRef.current;
 
-    const pending = items.filter((q) => q.status === "idle");
-    if (pending.length === 0) return;
+      let pending = items.filter((q) => q.status === "idle");
+      if (pending.length === 0) return;
 
-    setIsBusy(true);
+      // Backpressure: limit how many files can be in uploading state
+      if (maxQueuedUploads != null) {
+        const uploading = queueRef.current.filter((q) => q.status === "uploading").length;
+        const headroom = Math.max(0, maxQueuedUploads - uploading);
+        pending = pending.slice(0, headroom);
+        if (pending.length === 0) return;
+      }
 
-    try {
-      await Promise.all(
-        pending.map((item) => {
-          const file = filesRef.current.get(item.id);
-          if (!file) return Promise.resolve();
-          return semRef.current.run(() => processFile(item, file));
-        }),
+      if (batchStartRef.current === 0) batchStartRef.current = Date.now();
+      const batchBytes = pending.reduce(
+        (sum, q) => sum + (filesRef.current.get(q.id)?.size ?? 0),
+        0,
       );
-    } finally {
-      setIsBusy(false);
-    }
-  }, []);
+      batchStatsRef.current.totalFiles += pending.length;
+      batchStatsRef.current.totalBytes += batchBytes;
+
+      setIsBusy(true);
+
+      try {
+        await Promise.all(
+          pending.map((item) => {
+            const file = filesRef.current.get(item.id);
+            if (!file) return Promise.resolve();
+            return semRef.current.run(() => processFile(item, file));
+          }),
+        );
+      } finally {
+        setIsBusy(false);
+
+        const { onBatchComplete: onBatch } = processOptionsRef.current;
+        const currentQueue = queueRef.current;
+        const succeeded = currentQueue.filter((q) => q.status === "complete").length;
+        const failed = currentQueue.filter((q) => q.status === "error").length;
+
+        onBatch?.({
+          totalFiles: batchStatsRef.current.totalFiles,
+          succeeded,
+          failed,
+          totalBytes: batchStatsRef.current.totalBytes,
+          totalTimeMs: Date.now() - batchStartRef.current,
+        });
+      }
+    },
+    [maxQueuedUploads],
+  );
 
   const cancelUpload = useCallback((fileId: string) => {
     abortControllersRef.current.get(fileId)?.abort();
@@ -387,10 +669,79 @@ export function useFileUpload<TMeta = void>(
 
   const retry = useCallback((fileId: string) => {
     setQueue((prev) =>
+      prev.map((q) => {
+        if (q.id !== fileId) return q;
+        if (q.needsReselect) return q; // Can't retry — file blob lost
+        return { ...q, status: "idle" as const, error: undefined, progress: 0 };
+      }),
+    );
+  }, []);
+
+  const retryUpload = useCallback(async (fileId: string) => {
+    const item = queueRef.current.find((q) => q.id === fileId);
+    if (!item || !item.artifacts || item.artifacts.length === 0) return;
+
+    const {
+      uploadAdapter: adapter,
+      onFileComplete: onDone,
+      onError: onErr,
+    } = processOptionsRef.current;
+    if (!adapter) return;
+
+    const controller = new AbortController();
+    abortControllersRef.current.set(fileId, controller);
+
+    setQueue((prev) =>
       prev.map((q) =>
-        q.id === fileId ? { ...q, status: "idle" as const, error: undefined, progress: 0 } : q,
+        q.id === fileId
+          ? { ...q, status: "uploading" as const, progress: 90, error: undefined }
+          : q,
       ),
     );
+
+    try {
+      await uploadSemRef.current.acquire();
+      try {
+        const total = item.artifacts.length;
+        for (let i = 0; i < total; i++) {
+          const a = item.artifacts[i]!;
+          if (controller.signal.aborted) return;
+          await adapter(
+            { variant: a.variant, blob: a.blob, filename: a.filename, filetype: a.blob.type },
+            {
+              onProgress: (p) => {
+                const overall = 90 + ((i + p / 100) / total) * 10;
+                setQueue((prev) =>
+                  prev.map((q) =>
+                    q.id === fileId ? { ...q, progress: Math.min(overall, 99) } : q,
+                  ),
+                );
+              },
+              signal: controller.signal,
+            },
+          );
+        }
+      } finally {
+        uploadSemRef.current.release();
+      }
+
+      const completed: FileUploadQueueItem<TMeta> = {
+        ...item,
+        status: "complete" as const,
+        progress: 100,
+      };
+      setQueue((prev) => prev.map((q) => (q.id === fileId ? completed : q)));
+      onDone?.(completed);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setQueue((prev) =>
+        prev.map((q) => (q.id === fileId ? { ...q, status: "error" as const, error: message } : q)),
+      );
+      onErr?.(err instanceof Error ? err : new Error(message), { fileName: item.name });
+    } finally {
+      abortControllersRef.current.delete(fileId);
+    }
   }, []);
 
   const clear = useCallback(() => {
@@ -417,6 +768,133 @@ export function useFileUpload<TMeta = void>(
     }
   }, [plugins]);
 
+  // Prevent tab close during processing
+  useEffect(() => {
+    if (!autoPreventTabClose || !isBusy) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [autoPreventTabClose, isBusy]);
+
+  // Restore queue from IndexedDB on mount
+  useEffect(() => {
+    if (persistence !== "indexeddb") return;
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+
+    loadQueue()
+      .then((stored) => {
+        if (stored.length === 0) return;
+        const restored: FileUploadQueueItem<TMeta>[] = stored.map((s) => {
+          const file = new File([], s.fileName, {
+            type: s.fileType,
+            lastModified: s.fileLastModified,
+          });
+          const isAlive = s.status === "complete";
+          return {
+            id: s.id,
+            name: s.name,
+            file,
+            status: (isAlive ? "complete" : "error") as FileUploadQueueItem<TMeta>["status"],
+            progress: isAlive ? 100 : 0,
+            error: isAlive
+              ? undefined
+              : "File unavailable after page reload. Drop the file again to re-process.",
+            meta: s.meta as TMeta,
+            needsReselect: !isAlive,
+            artifacts: s.artifacts?.map((a) => ({
+              variant: a.variant,
+              filename: a.filename,
+              blob: new Blob(),
+            })),
+          };
+        });
+        setQueue(restored);
+      })
+      .catch(() => {});
+  }, [persistence]);
+
+  // Persist queue to IndexedDB on changes (debounced)
+  const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (persistence !== "indexeddb") return;
+    if (!restoredRef.current) return;
+
+    if (persistTimeoutRef.current) clearTimeout(persistTimeoutRef.current);
+    persistTimeoutRef.current = setTimeout(() => {
+      saveQueue(serializeForStorage(queueRef.current as any)).catch(() => {});
+    }, 500);
+
+    return () => {
+      if (persistTimeoutRef.current) clearTimeout(persistTimeoutRef.current);
+    };
+  }, [queue, persistence]);
+
+  const pause = useCallback(() => {
+    pauseRef.current.paused = true;
+    setIsPaused(true);
+  }, []);
+
+  const resume = useCallback(() => {
+    if (!pauseRef.current.paused) return;
+    pauseRef.current.paused = false;
+    pauseRef.current.resolve?.();
+    pauseRef.current.resolve = null;
+    setIsPaused(false);
+    void startUpload();
+  }, [startUpload]);
+
+  // Auto-pause on network offline, resume on online
+  useEffect(() => {
+    if (!autoPauseOnOffline) return;
+    const onOffline = () => pause();
+    const onOnline = () => resume();
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("online", onOnline);
+    return () => {
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
+    };
+  }, [autoPauseOnOffline, pause, resume]);
+
+  // Screen wake lock while busy
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  useEffect(() => {
+    if (!autoWakeLock) return;
+    if (!isBusy) {
+      wakeLockRef.current?.release().catch(() => {});
+      wakeLockRef.current = null;
+      return;
+    }
+    let cancelled = false;
+    const acquire = async () => {
+      try {
+        const lock = await navigator.wakeLock.request("screen");
+        if (cancelled) {
+          lock.release().catch(() => {});
+          return;
+        }
+        wakeLockRef.current = lock;
+        lock.addEventListener("release", () => {
+          if (wakeLockRef.current === lock) wakeLockRef.current = null;
+        });
+      } catch {}
+    };
+    void acquire();
+    const onVisChange = () => {
+      if (document.visibilityState === "visible" && !wakeLockRef.current) void acquire();
+    };
+    document.addEventListener("visibilitychange", onVisChange);
+    return () => {
+      cancelled = true;
+      wakeLockRef.current?.release().catch(() => {});
+      wakeLockRef.current = null;
+      document.removeEventListener("visibilitychange", onVisChange);
+    };
+  }, [autoWakeLock, isBusy]);
+
   return {
     config,
     updateConfig,
@@ -424,9 +902,13 @@ export function useFileUpload<TMeta = void>(
     startUpload,
     clear,
     retry,
+    retryUpload,
     cancelUpload,
     cancelAll,
+    pause,
+    resume,
     isBusy,
+    isPaused,
     isDragOver,
     getDropTargetProps,
     getFileInputProps,

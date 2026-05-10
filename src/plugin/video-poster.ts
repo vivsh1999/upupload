@@ -53,6 +53,8 @@ async function videoPosterFile(
 export interface VideoPosterPluginOptions {
   variant?: string;
   maxEdge?: number;
+  /** When true, emit the poster as a direct artifact. Default: true. */
+  produceArtifact?: boolean;
 }
 
 /**
@@ -89,16 +91,19 @@ export const videoPoster: Plugin<VideoPosterPluginOptions> = new Plugin<VideoPos
       };
     }
     ctx.shared.set(PIPELINE_CURRENT_KEY, poster);
+    const produceArtifact = pluginOpts.produceArtifact !== false;
     return {
-      artifacts: [
-        artifact(
-          pluginOpts.variant ?? "poster",
-          poster,
-          poster.name,
-          poster.type || "application/octet-stream",
-          { relativePath: input.relativePath },
-        ),
-      ],
+      artifacts: produceArtifact
+        ? [
+            artifact(
+              pluginOpts.variant ?? "poster",
+              poster,
+              poster.name,
+              poster.type || "application/octet-stream",
+              { relativePath: input.relativePath },
+            ),
+          ]
+        : [],
       info: [],
       removeFromQueue: false,
     };

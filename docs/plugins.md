@@ -13,6 +13,7 @@ const watermark = new Plugin<{ opacity: number }>({
   name: "Watermark Plugin",
   options: { opacity: 0.5 },
   supports: (file) => file.type?.startsWith("image/") ?? false,
+  // file.name, file.type, file.size available in supports()
 
   // run shorthand — no need for createStages/array wrapping:
   run: async (input, opts, classif, ctx) => {
@@ -21,6 +22,7 @@ const watermark = new Plugin<{ opacity: number }>({
     // ctx.shared.get/set for inter-stage communication
     // ctx.log for structured logging
     // ctx.signal for cancellation
+    // ctx.reportProgress(percent) for long-running operations
     return emptyResult();
   },
 
@@ -44,12 +46,29 @@ new Plugin({
 });
 ```
 
+### Plugin Context
+
+The `PipelineContext` received by `run()` and `createStages()`:
+
+| Property         | Type                                     | Description                                                            |
+| ---------------- | ---------------------------------------- | ---------------------------------------------------------------------- |
+| `log`            | `(level, message, extra?) => void`       | Structured logging (`"debug"`, `"info"`, `"warn"`, `"error"`)          |
+| `shared`         | `Map<string, unknown>`                   | Inter-stage communication bag                                          |
+| `signal`         | `AbortSignal \| undefined`               | Cancellation signal (from `cancelUpload` / pipeline abort)             |
+| `reportProgress` | `(percent: number) => void \| undefined` | Call to surface 0–100 progress; wired to `onStageProgress` in the hook |
+
 ## Result Helpers
 
 To eliminate boilerplate, use the built-in result builders from `@vivsh1999/upupload/core`:
 
 ```ts
-import { emptyResult, artifact, warning, infoMessage } from "@vivsh1999/upupload/core";
+import {
+  emptyResult,
+  artifact,
+  warning,
+  infoMessage,
+  fallbackResult,
+} from "@vivsh1999/upupload/core";
 
 // Instead of: { artifacts: [], info: [], removeFromQueue: false }
 return emptyResult();
@@ -62,6 +81,9 @@ return warning("Failed", "err");
 
 // Instead of: { level: "info", message: "Done", code: "ok" }
 return infoMessage("Done", "ok");
+
+// Fallback value for error handlers:
+return { action: "fallback", value: fallbackResult() };
 ```
 
 ## Built-in Plugins
@@ -86,7 +108,7 @@ Handles standard raster images (JPEG, PNG, WebP, BMP, GIF, AVIF).
 - If a previous plugin placed a decoded file in shared context (`pipeline:current`), the compressor operates on that instead of the original.
 - `quality` and `maxSizeMB` are required; `variant` defaults to `"outputFile"`, `maxLongEdge` defaults to `-1` (original size).
 - Does NOT handle RAW/HEIC/TIFF — use `rawToJpeg` for those
-- **Dep:** `browser-image-compression` (install separately)
+- **Dep:** `browser-image-compression` (install separately); **falls back** to Canvas API when unavailable
 
 ### `rawToJpeg`
 
@@ -97,6 +119,7 @@ Handles camera RAW (CR3, DNG, NEF, ARW, etc.), HEIC/HEIF, and TIFF files.
 - Pure decoder — produces no artifact. Places the decoded JPEG in the shared pipeline context.
 - Downstream `jpegCompressor.with()` instances read the decoded file from shared context.
 - Shares single decode across multiple compressor variants.
+- `supports()` matches by extension and also catches non-standard MIME types (`image/x-*`).
 - **Deps:** `libraw-wasm` (required), `heic-decode`/`heic2any`/`utif` (optional)
 
 ### `videoPoster`
@@ -105,7 +128,9 @@ Handles camera RAW (CR3, DNG, NEF, ARW, etc.), HEIC/HEIF, and TIFF files.
 
 Extracts a JPEG poster frame from video files.
 
-- Also updates `pipeline:current` for downstream plugins that chain on it.
+- Emits a `poster` variant artifact by default.
+- Sets `pipeline:current` for downstream plugins that chain on it.
+- `produceArtifact?: boolean` option (default `true`). When `false`, only sets `pipeline:current` without emitting an artifact.
 - **No external deps.**
 
 ### Tree-shaking
@@ -204,10 +229,25 @@ const myPlugin = new Plugin<{ quality: number }>({
     const sourceFile = (ctx.shared.get(PIPELINE_CURRENT_KEY) as File | undefined) ?? input.file;
     // opts.quality is typed as number
     // classif.stemName, classif.ext, etc. available without closure
+    // ctx.reportProgress(50) — surface 50% progress during long operations
     return artifact("output", sourceFile, `${classif.stemName}.out.jpg`, "image/jpeg");
   },
   sharedKeys: { output: "my-plugin:processed" },
 });
+```
+
+### Reporting Progress
+
+During long-running operations (decoding, compression, network), call `ctx.reportProgress(percent)` to surface progress through the pipeline's `onStageProgress` callback:
+
+```ts
+run: async (input, opts, classif, ctx) => {
+  for (let i = 0; i < totalSteps; i++) {
+    // ... do work ...
+    ctx.reportProgress?.(Math.round((i / totalSteps) * 100));
+  }
+  return artifact("output", result, ...);
+}
 ```
 
 ### Using `createStages` (Multi-Stage)
@@ -344,7 +384,7 @@ new Plugin({
         return { action: "skip", info: { level: "warn", message: "Skipped", code: "SKIP" } };
 
         // Option B: Fall back to original input
-        return { action: "fallback", value: { artifacts: [], info: [], removeFromQueue: false } };
+        return { action: "fallback", value: fallbackResult() };
 
         // Option C: Retry up to 3 times with 1s delay
         return { action: "retry", maxRetries: 3, delayMs: 1000 };
@@ -421,6 +461,7 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for the full contribution process.
 - **Use `artifact()` helper** — ensures the shape is correct and `filetype` is auto-filled from the blob
 - **Don't mutate the input file** — produce a new `Blob` or `File` for each artifact
 - **Handle cancellation** — check `ctx.signal?.aborted` in long-running operations
+- **Report progress** — call `ctx.reportProgress(percent)` during long operations for granular UI progress
 - **Prefer MIME checks** in `supports()` — they're more reliable than extension checks
 - **Use `_` prefix** for internal helper files (not exported from the plugin barrel)
 - **Install heavy deps lazily** — use dynamic `import()` at runtime rather than static imports

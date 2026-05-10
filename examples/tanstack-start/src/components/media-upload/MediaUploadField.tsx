@@ -124,7 +124,14 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
         }}
         onClear={media.clear}
         uploadQueue={renderFileList ? undefined : media.queue}
-        onRetryQueueItem={media.retry}
+        onRetryQueueItem={(id) => {
+          const item = media.queue.find((q) => q.id === id);
+          if (item?.artifacts && item.artifacts.length > 0) {
+            media.retryUpload(id);
+          } else {
+            media.retry(id);
+          }
+        }}
         disabled={isDisabled}
         labels={labels}
         classNames={classNames}

@@ -237,6 +237,9 @@ export async function runPipeline(
       }
     }
 
+    // 4b. Pause check between stages
+    if (options?.onPauseCheck) await options.onPauseCheck();
+
     // 5. Collect parallel batch
     if (stage.parallel) {
       const batch: PipelineStage<PipelineSource, PipelineResult>[] = [];
@@ -256,9 +259,12 @@ export async function runPipeline(
 
       if (batch.length > 0) {
         const results = await Promise.all(
-          batch.map((s) =>
-            executeStage(s, source, ctx, log, batchStartIndex, total, options, current),
-          ),
+          batch.map((s) => {
+            const stageCtx: PipelineContext = options?.onStageProgress
+              ? { ...ctx, reportProgress: (p) => options.onStageProgress!(s.id, p) }
+              : ctx;
+            return executeStage(s, source, stageCtx, log, batchStartIndex, total, options, current);
+          }),
         );
 
         for (const { result, skipped } of results) {
@@ -275,10 +281,13 @@ export async function runPipeline(
       }
     } else {
       // 6. Run single stage
+      const stageCtx: PipelineContext = options?.onStageProgress
+        ? { ...ctx, reportProgress: (p) => options.onStageProgress!(stage.id, p) }
+        : ctx;
       const { result, skipped } = await executeStage(
         stage,
         source,
-        ctx,
+        stageCtx,
         log,
         i,
         total,

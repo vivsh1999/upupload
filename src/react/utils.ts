@@ -1,6 +1,19 @@
+/** @module react/utils */
+
 /**
  * Bounded concurrency semaphore.
  * Limits how many async operations run simultaneously.
+ *
+ * Useful for controlling upload concurrency outside the hook, e.g. when
+ * uploading artifacts via fetch or XHR.
+ *
+ * @example
+ * ```ts
+ * import { Semaphore } from "@vivsh1999/upupload/react";
+ *
+ * const sem = new Semaphore(4); // max 4 concurrent uploads
+ * await sem.run(() => fetch("/api/upload", { method: "PUT", body: blob }));
+ * ```
  */
 export class Semaphore {
   private running = 0;

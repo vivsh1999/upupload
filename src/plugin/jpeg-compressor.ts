@@ -3,6 +3,7 @@ import { fileExtensionLower, RASTER_IMAGE_EXTENSIONS, RAW_EXTENSIONS } from "../
 import { PIPELINE_CURRENT_KEY } from "../core/constants";
 import { Plugin } from "./plugin";
 import { warning, artifact } from "../core/result";
+import { jpegFileFromBlob } from "./_rasterize";
 
 type ImageCompressionFn = (
   file: File | Blob,
@@ -15,9 +16,12 @@ const BIC = "browser-image-compression";
 
 async function loadImageCompression(): Promise<ImageCompressionFn> {
   if (!compressionModulePromise) {
-    compressionModulePromise = import(BIC).then(
-      (mod: { default: ImageCompressionFn }) => mod.default,
-    );
+    compressionModulePromise = import(BIC)
+      .then((mod: { default: ImageCompressionFn }) => mod.default)
+      .catch(() => {
+        compressionModulePromise = null;
+        throw new Error("browser-image-compression not available");
+      });
   }
   return compressionModulePromise;
 }
@@ -74,9 +78,12 @@ export const jpegCompressor: Plugin<JpegCompressorPluginOptions> =
 
       const sourceFile = (ctx.shared.get(PIPELINE_CURRENT_KEY) as File | undefined) ?? input.file;
 
-      const imageCompression = await loadImageCompression();
+      // Try browser-image-compression first, fall back to Canvas API
+      let compressed: Blob | File | null = null;
+
       try {
-        const compressed = await imageCompression(sourceFile, {
+        const imageCompression = await loadImageCompression();
+        compressed = await imageCompression(sourceFile, {
           maxSizeMB: pluginOpts.maxSizeMB,
           maxWidthOrHeight: maxWH ?? 16384,
           useWebWorker: true,
@@ -84,22 +91,22 @@ export const jpegCompressor: Plugin<JpegCompressorPluginOptions> =
           fileType: "image/jpeg",
           initialQuality: q,
         });
-        const now = Date.now();
-        const jpegFile = new File(
-          [compressed],
-          variantName.endsWith(".jpg") ? variantName : `${stemName}.${variantName}.jpg`,
-          { type: "image/jpeg", lastModified: now },
-        );
-        return {
-          artifacts: [
-            artifact(variantName, jpegFile, jpegFile.name, jpegFile.type, {
-              relativePath: input.relativePath,
-            }),
-          ],
-          info: [],
-          removeFromQueue: false,
-        };
       } catch {
+        ctx.log(
+          "debug",
+          `browser-image-compression unavailable, falling back to Canvas compression for "${input.name}"`,
+        );
+      }
+
+      if (!compressed) {
+        compressed = await jpegFileFromBlob(sourceFile, `${stemName}.${variantName}.jpg`, {
+          quality: q,
+          maxWidthOrHeight: maxWH,
+          maxSizeBytes: pluginOpts.maxSizeMB > 0 ? pluginOpts.maxSizeMB * 1024 * 1024 : undefined,
+        });
+      }
+
+      if (!compressed) {
         return {
           artifacts: [],
           info: [
@@ -108,6 +115,22 @@ export const jpegCompressor: Plugin<JpegCompressorPluginOptions> =
           removeFromQueue: false,
         };
       }
+
+      const now = Date.now();
+      const jpegFile = new File(
+        [compressed],
+        variantName.endsWith(".jpg") ? variantName : `${stemName}.${variantName}.jpg`,
+        { type: "image/jpeg", lastModified: now },
+      );
+      return {
+        artifacts: [
+          artifact(variantName, jpegFile, jpegFile.name, jpegFile.type, {
+            relativePath: input.relativePath,
+          }),
+        ],
+        info: [],
+        removeFromQueue: false,
+      };
     },
     preload: () => preloadImageCompression(),
   });

@@ -145,6 +145,9 @@ export async function runDefaultBrowserPipeline(
     plugins?: ProcessingPlugin<any>[];
     pipeline?: PipelineDef[];
     signal?: AbortSignal;
+    onStageProgress?: (stageId: string, progress: number) => void;
+    onPauseCheck?: () => Promise<void>;
+    pipelineContextMeta?: Record<string, unknown>;
   },
 ): Promise<PipelineResult> {
   // If pipeline definitions are provided, use the first matching one;
@@ -173,6 +176,22 @@ export async function runDefaultBrowserPipeline(
     fn(prefix, message, extra ?? "");
   };
 
+  // Normalize: prefer source.type over file.type, warn on mismatch
+  if (
+    input.type &&
+    input.file.type &&
+    input.type !== input.file.type &&
+    input.type.toLowerCase() !== input.file.type.toLowerCase()
+  ) {
+    log(
+      "warn",
+      `source.type ("${input.type}") differs from file.type ("${input.file.type}") — preferring source.type.`,
+      {
+        name: input.name,
+      },
+    );
+  }
+
   const ext = fileExtensionLower(input.name);
   const mime = (input.type ?? "").toLowerCase();
   const stemName = stem(input.name);
@@ -194,9 +213,14 @@ export async function runDefaultBrowserPipeline(
   };
 
   const ctx: PipelineContext = { log, shared: new Map(), signal };
+  if (extra?.pipelineContextMeta) {
+    for (const [key, val] of Object.entries(extra.pipelineContextMeta)) {
+      ctx.shared.set(key, val);
+    }
+  }
   ctx.shared.set(PIPELINE_CLASSIF_KEY, classif);
 
-  const matchedPlugins = plugins.filter((p) => p.supports(input));
+  const matchedPlugins = plugins.filter((p) => p.supports({ ...input, size: input.file.size }));
   checkDuplicateStageIds(matchedPlugins);
   const sorted = topologicalSort(matchedPlugins);
 
@@ -266,7 +290,12 @@ export async function runDefaultBrowserPipeline(
     ],
   };
 
-  const out = await runPipeline(input, def, { logger: log, signal });
+  const out = await runPipeline(input, def, {
+    logger: log,
+    signal,
+    onStageProgress: extra?.onStageProgress,
+    onPauseCheck: extra?.onPauseCheck,
+  });
 
   // Filter out any artifact flagged with `skip: true`
   out.artifacts = out.artifacts.filter((a) => !a.skip);
