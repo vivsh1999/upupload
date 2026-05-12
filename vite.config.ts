@@ -6,6 +6,9 @@ export default defineConfig({
   },
   pack: {
     dts: true,
+    deps: {
+      neverBundle: ["react"],
+    },
   },
   lint: {
     options: {
