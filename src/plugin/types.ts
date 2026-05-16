@@ -20,7 +20,28 @@ export interface FileClassification {
 
 /**
  * A processing plugin contributes pipeline stages for specific file types.
+ *
+ * Use the {@link Plugin} class for the canonical way to create plugins —
+ * it supports a `run` shorthand, typed options, and `.with()` for overrides.
+ *
  * @typeParam TOpts - The shape of plugin options this plugin expects.
+ *
+ * @example
+ * ```ts
+ * const myPlugin = new Plugin<{ quality: number }>({
+ *   id: "my-plugin",
+ *   name: "My Plugin",
+ *   options: { quality: 80 },
+ *   supports: (file) => file.type?.startsWith("image/") ?? false,
+ *   run: async (input, opts, classif, ctx) => {
+ *     // opts is typed as { quality: number }
+ *     // ctx.shared — read/write shared state between plugins
+ *     // ctx.log("info", "processing...") — structured logging
+ *     // ctx.reportProgress(50) — surface 0-100 progress
+ *     return artifact("output", input.file, classif.stemName + ".jpg", "image/jpeg");
+ *   },
+ * });
+ * ```
  */
 export interface ProcessingPlugin<TOpts = Record<string, unknown>> {
   readonly id: string;

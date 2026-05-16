@@ -51,41 +51,67 @@ export const FileStatus = {
   Error: "error" as const,
 } satisfies Record<string, FileStatus>;
 
-/** A single file in the upload queue with processing state. */
-export interface FileUploadQueueItem<TMeta = void> {
-  /** Unique identifier for this file in the queue (stable across retries). */
-  id: string;
-  /** Original filename from the `File` object (e.g. `"vacation.jpg"`). */
-  name: string;
-  /** The raw `File` object. Present when the user dropped/selected the file;
-   *  absent (wrapped as empty `File`) after restoration from IndexedDB for
-   *  non-complete items — check `needsReselect`. */
-  file: File;
-  /** Current processing status. Use the `FileStatus` constants for comparisons. */
-  status: FileStatus;
-  /** Upload progress as a number from 0 to 100. */
-  progress: number;
-  /** Human-readable error message when `status === "error"`. */
-  error?: string;
-  /** Object URL for the first processed artifact (for display). Revoked on `clear()`. */
-  previewUrl?: string;
-  /** Arbitrary metadata attached by the `getMeta` option. */
-  meta?: TMeta;
-  /** Processed artifacts (compressed JPEGs, video posters, etc.).
-   *  Each artifact is a variant of the original file produced by the pipeline. */
-  artifacts?: {
-    variant: string;
-    filename: string;
-    blob: Blob;
-    url?: string;
-  }[];
-  /**
-   * When `true`, the file blob isn't available in memory
-   * (e.g. restored from IndexedDB after page reload).
-   * The UI should prompt the user to re-drop this file to re-process it.
-   */
-  needsReselect?: boolean;
-}
+/** A single file in the upload queue with processing state.
+ *
+ * When `needsReselect` is `true`, the raw `File` object is unavailable
+ * (e.g. restored from IndexedDB after page reload). Check the discriminant
+ * before accessing `.file`.
+ */
+export type FileUploadQueueItem<TMeta = void> =
+  | {
+      /** Unique identifier for this file in the queue (stable across retries). */
+      id: string;
+      /** Original filename from the `File` object (e.g. `"vacation.jpg"`). */
+      name: string;
+      /** The raw `File` object. Present when `needsReselect` is `false`. */
+      file: File;
+      /** Current processing status. Use the `FileStatus` constants for comparisons. */
+      status: FileStatus;
+      /** Upload progress as a number from 0 to 100. */
+      progress: number;
+      /** Human-readable error message when `status === "error"`. */
+      error?: string;
+      /** Object URL for the first processed artifact (for display). Revoked on `clear()`. */
+      previewUrl?: string;
+      /** Arbitrary metadata attached by the `getMeta` option. */
+      meta?: TMeta;
+      /** Processed artifacts (compressed JPEGs, video posters, etc.).
+       *  Each artifact is a variant of the original file produced by the pipeline. */
+      artifacts?: {
+        variant: string;
+        filename: string;
+        blob: Blob;
+        url?: string;
+      }[];
+      needsReselect: false;
+    }
+  | {
+      /** Unique identifier for this file in the queue (stable across retries). */
+      id: string;
+      /** Original filename from the `File` object (e.g. `"vacation.jpg"`). */
+      name: string;
+      /** Not available when blob is lost (e.g. restored from IndexedDB). */
+      file?: never;
+      /** Current processing status. Use the `FileStatus` constants for comparisons. */
+      status: FileStatus;
+      /** Upload progress as a number from 0 to 100. */
+      progress: number;
+      /** Human-readable error message when `status === "error"`. */
+      error?: string;
+      /** Object URL for the first processed artifact (for display). Revoked on `clear()`. */
+      previewUrl?: string;
+      /** Arbitrary metadata attached by the `getMeta` option. */
+      meta?: TMeta;
+      /** Processed artifacts (compressed JPEGs, video posters, etc.).
+       *  Each artifact is a variant of the original file produced by the pipeline. */
+      artifacts?: {
+        variant: string;
+        filename: string;
+        blob: Blob;
+        url?: string;
+      }[];
+      needsReselect: true;
+    };
 
 /**
  * Upload adapter — a user-supplied function that handles uploading a single artifact.
@@ -99,7 +125,7 @@ export interface FileUploadQueueItem<TMeta = void> {
  *   Includes the full list of files and any value returned by `onBeforeStart`.
  *   Useful for batch coordination (e.g. pre-initializing a session for all files).
  */
-export type UploadAdapter = (
+export type UploadAdapter<TPreload = undefined> = (
   artifact: {
     variant: string;
     blob: Blob;
@@ -122,7 +148,7 @@ export type UploadAdapter = (
       /** Unique identifier for this batch. Stable across all adapter calls in the batch. */
       batchId: string;
       /** Value returned by the `onBeforeStart` hook, if configured. */
-      preload?: unknown;
+      preload?: TPreload;
     };
   },
 ) => Promise<void>;
@@ -155,7 +181,7 @@ export interface BatchProgressStats {
   uploadedBytes: number;
 }
 
-export interface UseFileUploadOptions<TMeta = void> {
+export interface UseFileUploadOptions<TMeta = void, TPreload = undefined> {
   plugins?: ProcessingPlugin<any>[];
   pipeline?: PipelineDef[];
   pipelineConfig?: Partial<BrowserPipelineOptions>;
@@ -222,7 +248,7 @@ export interface UseFileUploadOptions<TMeta = void> {
    * file as `"complete"` after all uploads finish. Progress during upload
    * maps to the 90-100% range on the queue item.
    */
-  uploadAdapter?: UploadAdapter;
+  uploadAdapter?: UploadAdapter<TPreload>;
   /**
    * Factory that returns metadata to inject into every file's pipeline context.
    * Useful for propagating global state (auth tokens, project IDs, etc.) to
@@ -237,12 +263,20 @@ export interface UseFileUploadOptions<TMeta = void> {
    * all files and returning a session token for the upload adapter.
    *
    * The return value is passed to every adapter call in this batch via
-   * `helpers.batch.preload`.
+   * `helpers.batch.preload`, typed as `TPreload`.
    *
    * @param files - All files in this batch that are about to be processed.
    * @returns An arbitrary value that will be available to each adapter call.
    */
-  onBeforeStart?: (files: FileUploadQueueItem<TMeta>[]) => Promise<unknown>;
+  onBeforeStart?: (files: FileUploadQueueItem<TMeta>[]) => Promise<TPreload>;
+  /**
+   * Controls what `retry(fileId)` does.
+   * - `"pipeline"` (default): resets the file to idle, re-running the full
+   *   compression/transcoding pipeline on the next `startUpload()`.
+   * - `"adapter-only"`: re-runs only the upload adapter using cached artifacts,
+   *   skipping re-compression. Falls back to `"pipeline"` if no artifacts exist.
+   */
+  retryMode?: "pipeline" | "adapter-only";
 }
 
 export interface UseFileUploadResult<TMeta = void> {
@@ -304,8 +338,8 @@ function defaultConcurrency(): number {
   return 4;
 }
 
-export function useFileUpload<TMeta = void>(
-  options?: UseFileUploadOptions<TMeta>,
+export function useFileUpload<TMeta = void, TPreload = undefined>(
+  options?: UseFileUploadOptions<TMeta, TPreload>,
 ): UseFileUploadResult<TMeta> {
   const {
     plugins,
@@ -332,6 +366,7 @@ export function useFileUpload<TMeta = void>(
     maxQueuedUploads,
     onBeforeStart,
     storageKeyPrefix,
+    retryMode,
   } = options ?? {};
 
   const [config, setConfig] = useState<BrowserPipelineOptions>({
@@ -367,7 +402,7 @@ export function useFileUpload<TMeta = void>(
   const batchContextRef = useRef<{
     files: FileUploadQueueItem[];
     batchId: string;
-    preload?: unknown;
+    preload?: TPreload;
   } | null>(null);
   const dbName = buildDbName(storageKeyPrefix);
 
@@ -393,6 +428,7 @@ export function useFileUpload<TMeta = void>(
     uploadAdapter,
     getPipelineContextMeta,
     onBeforeStart,
+    retryMode,
   });
   processOptionsRef.current = {
     config,
@@ -408,6 +444,7 @@ export function useFileUpload<TMeta = void>(
     uploadAdapter,
     getPipelineContextMeta,
     onBeforeStart,
+    retryMode,
   };
 
   const fireBatchProgress = useCallback(() => {
@@ -451,7 +488,7 @@ export function useFileUpload<TMeta = void>(
       }
 
       if (maxTotalBatchSize != null) {
-        const currentTotal = queueRef.current.reduce((sum, q) => sum + q.file.size, 0);
+        const currentTotal = queueRef.current.reduce((sum, q) => sum + (q.file?.size ?? 0), 0);
         let running = currentTotal;
         filtered = filtered.filter((f) => {
           running += f.size;
@@ -478,6 +515,7 @@ export function useFileUpload<TMeta = void>(
           status: "idle",
           progress: 0,
           meta: getMeta?.(file),
+          needsReselect: false,
         });
       }
 
@@ -585,6 +623,7 @@ export function useFileUpload<TMeta = void>(
 
       try {
         if (controller.signal.aborted) return;
+        if (item.needsReselect) return; // File blob unavailable
 
         setQueue((prev) =>
           prev.map((q) =>
@@ -659,6 +698,7 @@ export function useFileUpload<TMeta = void>(
           progress: 90,
           artifacts: artifactPreviews,
           previewUrl: artifactPreviews[0]?.url,
+          needsReselect: false,
         };
         setQueue((prev) => prev.map((q) => (q.id === item.id ? processedItem : q)));
         currentOnFileProcessed?.(processedItem);
@@ -722,6 +762,7 @@ export function useFileUpload<TMeta = void>(
           progress: 100,
           artifacts: artifactPreviews,
           previewUrl: artifactPreviews[0]?.url,
+          needsReselect: false,
         };
 
         setQueue((prev) => prev.map((q) => (q.id === item.id ? completedItem : q)));
@@ -846,16 +887,6 @@ export function useFileUpload<TMeta = void>(
     }
   }, [cancelUpload]);
 
-  const retry = useCallback((fileId: string) => {
-    setQueue((prev) =>
-      prev.map((q) => {
-        if (q.id !== fileId) return q;
-        if (q.needsReselect) return q; // Can't retry — file blob lost
-        return { ...q, status: "idle" as const, error: undefined, progress: 0 };
-      }),
-    );
-  }, []);
-
   const retryUpload = useCallback(async (fileId: string) => {
     const item = queueRef.current.find((q) => q.id === fileId);
     if (!item || !item.artifacts || item.artifacts.length === 0) return;
@@ -927,6 +958,25 @@ export function useFileUpload<TMeta = void>(
     }
   }, []);
 
+  const retry = useCallback(
+    (fileId: string) => {
+      const opts = processOptionsRef.current;
+      // When retryMode is adapter-only and artifacts exist, skip re-compression
+      if (opts.retryMode === "adapter-only") {
+        retryUpload(fileId).catch(() => {});
+        return;
+      }
+      setQueue((prev) =>
+        prev.map((q) => {
+          if (q.id !== fileId) return q;
+          if (q.needsReselect) return q; // Can't retry — file blob lost
+          return { ...q, status: "idle" as const, error: undefined, progress: 0 };
+        }),
+      );
+    },
+    [retryUpload],
+  );
+
   const clear = useCallback(() => {
     for (const item of queueRef.current) {
       item.artifacts?.forEach((a) => a.url && URL.revokeObjectURL(a.url));
@@ -971,15 +1021,18 @@ export function useFileUpload<TMeta = void>(
       .then((stored) => {
         if (stored.length === 0) return;
         const restored: FileUploadQueueItem<TMeta>[] = stored.map((s) => {
-          const file = new File([], s.fileName, {
-            type: s.fileType,
-            lastModified: s.fileLastModified,
-          });
           const isAlive = s.status === "complete";
           return {
             id: s.id,
             name: s.name,
-            file,
+            ...(isAlive
+              ? {
+                  file: new File([], s.fileName, {
+                    type: s.fileType,
+                    lastModified: s.fileLastModified,
+                  }),
+                }
+              : {}),
             status: (isAlive ? "complete" : "error") as FileUploadQueueItem<TMeta>["status"],
             progress: isAlive ? 100 : 0,
             error: isAlive
@@ -992,7 +1045,7 @@ export function useFileUpload<TMeta = void>(
               filename: a.filename,
               blob: new Blob(),
             })),
-          };
+          } as FileUploadQueueItem<TMeta>;
         });
         setQueue(restored);
       })

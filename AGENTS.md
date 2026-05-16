@@ -306,7 +306,7 @@ Key features:
 ### Options
 
 ```ts
-interface UseFileUploadOptions<TMeta = void> {
+interface UseFileUploadOptions<TMeta = void, TPreload = undefined> {
   plugins?: ProcessingPlugin<any>[];
   pipeline?: PipelineDef[];
   pipelineConfig?: Partial<BrowserPipelineOptions>;
@@ -332,6 +332,8 @@ interface UseFileUploadOptions<TMeta = void> {
   onFileComplete?: (item: FileUploadQueueItem<TMeta>) => void;
   onBatchComplete?: (stats: BatchCompleteStats) => void;
   onBatchProgress?: (stats: BatchProgressStats) => void;
+  onBeforeStart?: (files: FileUploadQueueItem<TMeta>[]) => Promise<TPreload>;
+  retryMode?: "pipeline" | "adapter-only";
 }
 ```
 
@@ -362,29 +364,47 @@ interface UseFileUploadResult<TMeta = void> {
 ### Queue Item
 
 ```ts
-interface FileUploadQueueItem<TMeta = void> {
-  id: string;
-  name: string;
-  file: File;
-  status: "idle" | "processing" | "uploading" | "complete" | "error";
-  progress: number;
-  error?: string;
-  previewUrl?: string;
-  meta?: TMeta;
-  needsReselect?: boolean; // true if file blob lost (e.g. after page reload)
-  artifacts?: {
-    variant: string;
-    filename: string;
-    blob: Blob;
-    url?: string;
-  }[];
-}
+type FileUploadQueueItem<TMeta = void> =
+  | {
+      id: string;
+      name: string;
+      file: File;
+      status: "idle" | "processing" | "uploading" | "complete" | "error";
+      progress: number;
+      error?: string;
+      previewUrl?: string;
+      meta?: TMeta;
+      needsReselect: false;
+      artifacts?: {
+        variant: string;
+        filename: string;
+        blob: Blob;
+        url?: string;
+      }[];
+    }
+  | {
+      id: string;
+      name: string;
+      file?: never;
+      status: "idle" | "processing" | "uploading" | "complete" | "error";
+      progress: number;
+      error?: string;
+      previewUrl?: string;
+      meta?: TMeta;
+      needsReselect: true;
+      artifacts?: {
+        variant: string;
+        filename: string;
+        blob: Blob;
+        url?: string;
+      }[];
+    };
 ```
 
 ### UploadAdapter
 
 ```ts
-type UploadAdapter = (
+type UploadAdapter<TPreload = undefined> = (
   artifact: { variant: string; blob: Blob; filename: string; filetype: string },
   helpers: {
     onProgress: (progress: number) => void;
@@ -392,6 +412,11 @@ type UploadAdapter = (
     fileId: string; // file this artifact belongs to
     totalArtifacts: number; // total artifacts for this file
     artifactIndex: number; // index of this artifact (0-based)
+    batch?: {
+      files: FileUploadQueueItem[];
+      batchId: string;
+      preload?: TPreload; // typed via UseFileUploadOptions generic
+    };
   },
 ) => Promise<void>;
 ```

@@ -27,6 +27,16 @@ export const PIPELINE_CLASSIF_KEY = "pipeline:classif";
 // Options type & defaults
 // ---------------------------------------------------------------------------
 
+/**
+ * Tuning options for browser pipeline execution.
+ *
+ * @example
+ * ```ts
+ * import { runDefaultBrowserPipeline } from "@vivsh1999/upupload/browser";
+ *
+ * await runDefaultBrowserPipeline(source, { debug: true });
+ * ```
+ */
 export type BrowserPipelineOptions = {
   /** Enable debug logging to console. */
   debug?: boolean;

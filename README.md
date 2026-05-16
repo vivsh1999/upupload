@@ -262,6 +262,63 @@ Register it like any built-in plugin:
 useFileUpload({ plugins: [watermark.with({ opacity: 0.3 })] });
 ```
 
+### Build a Thumbnail Plugin
+
+A common use case is generating a smaller thumbnail variant alongside a full-size output. Here's a complete plugin that creates a 150×150 JPEG thumbnail using the Canvas API:
+
+```ts
+import { Plugin } from "@vivsh1999/upupload/plugins";
+import { artifact, emptyResult } from "@vivsh1999/upupload/core";
+
+interface ThumbnailOpts {
+  /** Max width/height in pixels. Default: 150 */
+  size?: number;
+}
+
+const thumbnailPlugin = new Plugin<ThumbnailOpts>({
+  id: "thumbnail",
+  name: "Thumbnail Generator",
+  options: { size: 150 },
+  supports: (file) => file.type?.startsWith("image/") ?? false,
+  run: async (input, opts, classif, ctx) => {
+    if (typeof OffscreenCanvas === "undefined") return emptyResult();
+
+    const img = await createImageBitmap(input.file);
+    const scale = Math.min(opts.size / img.width, opts.size / img.height, 1);
+    const w = Math.round(img.width * scale);
+    const h = Math.round(img.height * scale);
+
+    ctx.reportProgress?.(50); // surface progress
+
+    const canvas = new OffscreenCanvas(w, h);
+    const ctx2d = canvas.getContext("2d")!;
+    ctx2d.drawImage(img, 0, 0, w, h);
+    img.close();
+
+    const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 });
+    return artifact("thumb", blob, `${classif.stemName}-thumb.jpg`, "image/jpeg");
+  },
+});
+
+// Usage:
+useFileUpload({
+  plugins: [
+    jpegCompressor.with({ variant: "full", quality: 80 }),
+    thumbnailPlugin.with({ size: 150 }),
+  ],
+  // uploadAdapter receives both "full" and "thumb" artifacts per file
+  uploadAdapter: async (artifact, helpers) => {
+    if (artifact.variant === "thumb") {
+      // upload to thumbnail bucket
+    } else {
+      // upload full-size
+    }
+  },
+});
+```
+
+> **Tip for multi-artifact setups:** Each plugin variant produces a separate artifact. The `uploadAdapter` receives one call per artifact with `artifactIndex` and `totalArtifacts`, letting you coordinate uploads.
+
 Full guide: [docs/plugins.md](docs/plugins.md) — covers `createStages` for multi-stage plugins, shared context patterns, `after`/`before` ordering, error handling, and testing.
 
 Real example: [`examples/vanilla-html/custom-pipeline.js`](examples/vanilla-html/custom-pipeline.js) — a metadata-annotator plugin that reads image dimensions and writes JSON.

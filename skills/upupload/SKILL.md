@@ -212,6 +212,8 @@ interface UseFileUploadOptions<TMeta = void> {
   onFileComplete?: (item: FileUploadQueueItem<TMeta>) => void;
   onBatchComplete?: (stats: BatchCompleteStats) => void;
   onBatchProgress?: (stats: BatchProgressStats) => void; // live batch progress
+  onBeforeStart?: (files: FileUploadQueueItem<TMeta>[]) => Promise<TPreload>;
+  retryMode?: "pipeline" | "adapter-only";
 }
 ```
 

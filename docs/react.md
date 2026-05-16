@@ -46,7 +46,7 @@ function Uploader() {
 ### Options
 
 ```ts
-interface UseFileUploadOptions<TMeta = void> {
+interface UseFileUploadOptions<TMeta = void, TPreload = undefined> {
   plugins?: ProcessingPlugin<any>[];
   pipeline?: PipelineDef[];
   pipelineConfig?: Partial<BrowserPipelineOptions>;
@@ -62,7 +62,7 @@ interface UseFileUploadOptions<TMeta = void> {
     maxConcurrency?: number; // Pipeline concurrency (auto-detected)
     maxUploadConcurrency?: number; // Upload adapter concurrency
   };
-  uploadAdapter?: UploadAdapter; // Generic upload function
+  uploadAdapter?: UploadAdapter<TPreload>; // Generic upload function
   getMeta?: (file: File) => TMeta;
   getPipelineContextMeta?: () => Record<string, unknown>;
   onInfo?: (message: string) => void;
@@ -72,6 +72,8 @@ interface UseFileUploadOptions<TMeta = void> {
   onFileComplete?: (item: FileUploadQueueItem<TMeta>) => void;
   onBatchComplete?: (stats: BatchCompleteStats) => void;
   onBatchProgress?: (stats: BatchProgressStats) => void; // Live batch progress during processing/uploads
+  onBeforeStart?: (files: FileUploadQueueItem<TMeta>[]) => Promise<TPreload>; // Batch pre-processing hook
+  retryMode?: "pipeline" | "adapter-only"; // Controls retry behavior
 }
 ```
 
@@ -92,6 +94,8 @@ interface UseFileUploadOptions<TMeta = void> {
 | `onFileComplete`         | Fires after pipeline AND upload adapter resolve.                        |
 | `onBatchComplete`        | Fires with cumulative stats when system transitions busy→idle.          |
 | `onBatchProgress`        | Fires during processing/uploads with live batch stats.                  |
+| `onBeforeStart`          | Async hook before batch starts — return typed via `TPreload` generic.   |
+| `retryMode`              | `"pipeline"` (default) or `"adapter-only"` to skip re-compression.      |
 
 ### Return Value
 
@@ -120,29 +124,57 @@ interface UseFileUploadResult<TMeta = void> {
 ### Queue Item
 
 ```ts
-interface FileUploadQueueItem<TMeta = void> {
-  id: string;
-  name: string;
-  file: File;
-  status: "idle" | "processing" | "uploading" | "complete" | "error";
-  progress: number;
-  error?: string;
-  previewUrl?: string;
-  meta?: TMeta;
-  needsReselect?: boolean; // true if file blob unavailable (reloaded from IndexedDB)
-  artifacts?: {
-    variant: string;
-    filename: string;
-    blob: Blob;
-    url?: string;
-  }[];
+type FileUploadQueueItem<TMeta = void> =
+  | {
+      id: string;
+      name: string;
+      file: File; // Available when needsReselect is false
+      status: "idle" | "processing" | "uploading" | "complete" | "error";
+      progress: number;
+      error?: string;
+      previewUrl?: string;
+      meta?: TMeta;
+      needsReselect: false;
+      artifacts?: {
+        variant: string;
+        filename: string;
+        blob: Blob;
+        url?: string;
+      }[];
+    }
+  | {
+      id: string;
+      name: string;
+      file?: never; // Unavailable after IndexedDB restore
+      status: "idle" | "processing" | "uploading" | "complete" | "error";
+      progress: number;
+      error?: string;
+      previewUrl?: string;
+      meta?: TMeta;
+      needsReselect: true;
+      artifacts?: {
+        variant: string;
+        filename: string;
+        blob: Blob;
+        url?: string;
+      }[];
+    };
+```
+
+Check `item.needsReselect` before accessing `item.file`:
+
+```tsx
+if (item.needsReselect) {
+  // prompt user to re-select the file
+} else {
+  console.log(item.file.name);
 }
 ```
 
 ### UploadAdapter
 
 ```ts
-type UploadAdapter = (
+type UploadAdapter<TPreload = undefined> = (
   artifact: { variant: string; blob: Blob; filename: string; filetype: string },
   helpers: {
     onProgress: (progress: number) => void;
@@ -150,6 +182,11 @@ type UploadAdapter = (
     fileId: string; // File ID this artifact belongs to
     totalArtifacts: number; // Total artifacts for this file
     artifactIndex: number; // Index of this artifact (0-based)
+    batch?: {
+      files: FileUploadQueueItem[];
+      batchId: string;
+      preload?: TPreload; // Value from onBeforeStart, typed via generic
+    };
   },
 ) => Promise<void>;
 ```
