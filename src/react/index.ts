@@ -7,7 +7,7 @@ import type { PipelineSource } from "../core/types";
 import type { ProcessingPlugin } from "../plugin/types";
 import type { PipelineDef } from "../browser/pipeline";
 import { Semaphore } from "./utils";
-import { saveQueue, loadQueue, serializeForStorage } from "./persistence";
+import { saveQueue, loadQueue, serializeForStorage, buildDbName } from "./persistence";
 
 export type { BrowserPipelineOptions, PipelineDef } from "../browser/pipeline";
 export { Plugin } from "../plugin/plugin";
@@ -23,24 +23,67 @@ export interface FileUploadTuningOptions {
   maxUploadConcurrency?: number;
 }
 
+/**
+ * Represents the current status of a file in the upload queue.
+ *
+ * - `"idle"`: Queued and waiting for `startUpload()` to begin processing.
+ * - `"processing"`: Running through the compression/transcoding pipeline.
+ * - `"uploading"`: Pipeline completed; the upload adapter is sending artifacts.
+ * - `"complete"`: All processing and uploads finished successfully.
+ * - `"error"`: Processing or upload failed; check `item.error` for details.
+ */
+export type FileStatus = "idle" | "processing" | "uploading" | "complete" | "error";
+
+/**
+ * Named constants for the possible file statuses.
+ * Useful for comparisons without guessing string literals.
+ *
+ * @example
+ * ```ts
+ * if (item.status === FileStatus.Complete) { … }
+ * ```
+ */
+export const FileStatus = {
+  Idle: "idle" as const,
+  Processing: "processing" as const,
+  Uploading: "uploading" as const,
+  Complete: "complete" as const,
+  Error: "error" as const,
+} satisfies Record<string, FileStatus>;
+
 /** A single file in the upload queue with processing state. */
 export interface FileUploadQueueItem<TMeta = void> {
+  /** Unique identifier for this file in the queue (stable across retries). */
   id: string;
+  /** Original filename from the `File` object (e.g. `"vacation.jpg"`). */
   name: string;
+  /** The raw `File` object. Present when the user dropped/selected the file;
+   *  absent (wrapped as empty `File`) after restoration from IndexedDB for
+   *  non-complete items — check `needsReselect`. */
   file: File;
-  status: "idle" | "processing" | "uploading" | "complete" | "error";
+  /** Current processing status. Use the `FileStatus` constants for comparisons. */
+  status: FileStatus;
+  /** Upload progress as a number from 0 to 100. */
   progress: number;
+  /** Human-readable error message when `status === "error"`. */
   error?: string;
+  /** Object URL for the first processed artifact (for display). Revoked on `clear()`. */
   previewUrl?: string;
+  /** Arbitrary metadata attached by the `getMeta` option. */
   meta?: TMeta;
+  /** Processed artifacts (compressed JPEGs, video posters, etc.).
+   *  Each artifact is a variant of the original file produced by the pipeline. */
   artifacts?: {
     variant: string;
     filename: string;
     blob: Blob;
     url?: string;
   }[];
-  /** When true, the file blob isn't available (e.g. restored from IndexedDB).
-   *  The UI should prompt the user to re-drop this file. */
+  /**
+   * When `true`, the file blob isn't available in memory
+   * (e.g. restored from IndexedDB after page reload).
+   * The UI should prompt the user to re-drop this file to re-process it.
+   */
   needsReselect?: boolean;
 }
 
@@ -52,6 +95,9 @@ export interface FileUploadQueueItem<TMeta = void> {
  * @param artifact - The artifact to upload (variant, blob, filename, filetype)
  * @param helpers.onProgress - Call with a 0-100 value to update the queue item's progress
  * @param helpers.signal - AbortSignal that fires when the upload is cancelled
+ * @param helpers.batch - Context about the current batch of files being processed.
+ *   Includes the full list of files and any value returned by `onBeforeStart`.
+ *   Useful for batch coordination (e.g. pre-initializing a session for all files).
  */
 export type UploadAdapter = (
   artifact: {
@@ -63,6 +109,15 @@ export type UploadAdapter = (
   helpers: {
     onProgress: (progress: number) => void;
     signal?: AbortSignal;
+    /** Context about the current batch of files being processed. */
+    batch?: {
+      /** All files in this batch, enabling the adapter to see the full picture. */
+      files: FileUploadQueueItem[];
+      /** Unique identifier for this batch. Stable across all adapter calls in the batch. */
+      batchId: string;
+      /** Value returned by the `onBeforeStart` hook, if configured. */
+      preload?: unknown;
+    };
   },
 ) => Promise<void>;
 
@@ -109,6 +164,18 @@ export interface UseFileUploadOptions<TMeta = void> {
    *   files to re-process them.
    */
   persistence?: "memory" | "indexeddb";
+  /**
+   * Optional prefix for the IndexedDB database name when
+   * `persistence: "indexeddb"` is used.
+   *
+   * The database name becomes `"<prefix>-upupload"`. The default (no prefix)
+   * is `"upupload"`.
+   *
+   * Useful for:
+   * - Multi-tenant or multi-account apps that need isolated storage
+   * - Clearing stale upload state without affecting other databases
+   */
+  storageKeyPrefix?: string;
   tuning?: FileUploadTuningOptions;
   onInfo?: (message: string) => void;
   onWarning?: (message: string) => void;
@@ -140,6 +207,20 @@ export interface UseFileUploadOptions<TMeta = void> {
    * pipeline plugins without closure threading.
    */
   getPipelineContextMeta?: () => Record<string, unknown>;
+  /**
+   * Hook called once before files enter the processing/upload pipeline,
+   * with the full list of pending files.
+   *
+   * Useful for batch pre-processing, e.g. calling `POST /bulk-init` with
+   * all files and returning a session token for the upload adapter.
+   *
+   * The return value is passed to every adapter call in this batch via
+   * `helpers.batch.preload`.
+   *
+   * @param files - All files in this batch that are about to be processed.
+   * @returns An arbitrary value that will be available to each adapter call.
+   */
+  onBeforeStart?: (files: FileUploadQueueItem<TMeta>[]) => Promise<unknown>;
 }
 
 export interface UseFileUploadResult<TMeta = void> {
@@ -149,7 +230,21 @@ export interface UseFileUploadResult<TMeta = void> {
   startUpload: (fileIds?: string[]) => Promise<void>;
   clear: () => void;
   retry: (fileId: string) => void;
-  /** Re-run the upload adapter for a file that has artifacts but failed during upload. */
+  /**
+   * Re-run the upload adapter for a file whose pipeline artifacts were preserved.
+   *
+   * **Does NOT re-run the pipeline** (compression, transcoding, etc.).
+   * Only the `uploadAdapter` is called again with the existing artifacts.
+   * This means the adapter must be idempotent — it may receive the same
+   * artifact blob across multiple `retryUpload` calls.
+   *
+   * Returns early (no-op) if:
+   * - No `uploadAdapter` is configured on the hook
+   * - The file has no artifacts (pipeline never completed or failed)
+   *
+   * Acquires the same `maxUploadConcurrency` slot as the initial upload path,
+   * so retrying respects your configured concurrency limit.
+   */
   retryUpload: (fileId: string) => void;
   cancelUpload: (fileId: string) => void;
   cancelAll: () => void;
@@ -212,6 +307,8 @@ export function useFileUpload<TMeta = void>(
     autoPauseOnOffline,
     autoWakeLock,
     maxQueuedUploads,
+    onBeforeStart,
+    storageKeyPrefix,
   } = options ?? {};
 
   const [config, setConfig] = useState<BrowserPipelineOptions>({
@@ -244,6 +341,12 @@ export function useFileUpload<TMeta = void>(
 
   const batchStatsRef = useRef({ totalFiles: 0, totalBytes: 0 });
   const batchStartRef = useRef(0);
+  const batchContextRef = useRef<{
+    files: FileUploadQueueItem[];
+    batchId: string;
+    preload?: unknown;
+  } | null>(null);
+  const dbName = buildDbName(storageKeyPrefix);
 
   const [isPaused, setIsPaused] = useState(false);
   const pauseRef = useRef<{ paused: boolean; resolve: (() => void) | null }>({
@@ -265,6 +368,7 @@ export function useFileUpload<TMeta = void>(
     onBatchComplete,
     uploadAdapter,
     getPipelineContextMeta,
+    onBeforeStart,
   });
   processOptionsRef.current = {
     config,
@@ -278,6 +382,7 @@ export function useFileUpload<TMeta = void>(
     onBatchComplete,
     uploadAdapter,
     getPipelineContextMeta,
+    onBeforeStart,
   };
 
   const updateConfig = useCallback((patch: Partial<BrowserPipelineOptions>) => {
@@ -530,6 +635,7 @@ export function useFileUpload<TMeta = void>(
               const a = result.artifacts[i]!;
               const blob = a.file instanceof Blob ? a.file : new Blob([a.file]);
               if (controller.signal.aborted) return;
+              const batchCtx = batchContextRef.current;
               await currentUploadAdapter(
                 {
                   variant: a.variant,
@@ -547,6 +653,13 @@ export function useFileUpload<TMeta = void>(
                     );
                   },
                   signal: controller.signal,
+                  batch: batchCtx
+                    ? {
+                        files: batchCtx.files,
+                        batchId: batchCtx.batchId,
+                        preload: batchCtx.preload,
+                      }
+                    : undefined,
                 },
               );
             }
@@ -620,6 +733,21 @@ export function useFileUpload<TMeta = void>(
 
       setIsBusy(true);
 
+      // Generate a unique batch ID for this dispatch
+      const batchId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+      // Call onBeforeStart with all pending files before any processing begins
+      const preload = await processOptionsRef.current.onBeforeStart?.(
+        pending as FileUploadQueueItem<TMeta>[],
+      );
+
+      // Store batch context so processFile can pass it to each adapter call
+      batchContextRef.current = {
+        files: pending as FileUploadQueueItem[],
+        batchId,
+        preload,
+      };
+
       try {
         await Promise.all(
           pending.map((item) => {
@@ -629,6 +757,7 @@ export function useFileUpload<TMeta = void>(
           }),
         );
       } finally {
+        batchContextRef.current = null;
         setIsBusy(false);
 
         const { onBatchComplete: onBatch } = processOptionsRef.current;
@@ -784,7 +913,7 @@ export function useFileUpload<TMeta = void>(
     if (restoredRef.current) return;
     restoredRef.current = true;
 
-    loadQueue()
+    loadQueue(dbName)
       .then((stored) => {
         if (stored.length === 0) return;
         const restored: FileUploadQueueItem<TMeta>[] = stored.map((s) => {
@@ -824,7 +953,7 @@ export function useFileUpload<TMeta = void>(
 
     if (persistTimeoutRef.current) clearTimeout(persistTimeoutRef.current);
     persistTimeoutRef.current = setTimeout(() => {
-      saveQueue(serializeForStorage(queueRef.current as any)).catch(() => {});
+      saveQueue(serializeForStorage(queueRef.current as any), dbName).catch(() => {});
     }, 500);
 
     return () => {

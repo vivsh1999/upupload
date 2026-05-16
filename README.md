@@ -174,6 +174,63 @@ useFileUpload({
 
 ---
 
+## File Processing Flow (React Hook)
+
+When you call `startUpload()`, files go through three throttle-controlled stages:
+
+```
+Input → queue (idle)
+         │
+         ▼
+┌──────────────────────────────────────────┐
+│ 1. Pipeline Processing (maxConcurrency)  │  ← compression, transcoding
+│    • Each file acquires a semaphore slot │     (0 – 90% progress)
+│    • Multiple files processed in parallel│
+│    • Plugins run sequentially per file   │
+└──────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────┐
+│ 2. Upload Adapter (per file, sequential) │  ← your adapter sends artifacts
+│    • Called once per artifact            │     (90 – 100% progress)
+│    • All artifacts of a file are sent    │
+│      sequentially (one at a time)        │
+│    • Adapter receives batch context      │
+│      via `helpers.batch`                 │
+└──────────────────────────────────────────┘
+         │
+         ▼
+    File marked "complete"  →  onFileComplete fires
+```
+
+### Throttles (three independent controls)
+
+| Setting                       | Controls                                                                                    | Default                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `tuning.maxConcurrency`       | How many files run the **pipeline** simultaneously                                          | `navigator.hardwareConcurrency` (capped at 4) |
+| `tuning.maxUploadConcurrency` | How many files upload **artifacts** simultaneously                                          | Same as `maxConcurrency`                      |
+| `maxQueuedUploads`            | Backpressure: how many files can be in **"uploading"** state at once before new files pause | Unlimited                                     |
+
+**Important:** `maxConcurrency` and `maxUploadConcurrency` are independent semaphores.
+
+- Four files could be processing pipelines while two others are uploading artifacts.
+- `maxQueuedUploads` is a global ceiling on the number of files in `"uploading"` state.
+  When hit, files that have finished processing will **not** start uploading until a slot frees up.
+
+### retryUpload lifecycle
+
+`retryUpload(fileId)` re-runs **only** the upload adapter — the pipeline
+(compression, transcoding, etc.) is **not** re-executed. The existing
+artifacts from the original processing are re-used. This means:
+
+- The adapter must be **idempotent**: it may receive the same artifact blob
+  across multiple `retryUpload` calls.
+- If the pipeline failed (no artifacts), `retryUpload` returns early (no-op).
+  Call `retry(fileId)` instead to reset the file to `"idle"` and re-process
+  it through the full pipeline.
+
+---
+
 ## Custom Plugins
 
 Write your own plugin to handle file types or processing that the built-in plugins don't cover.

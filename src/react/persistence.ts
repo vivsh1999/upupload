@@ -1,6 +1,6 @@
 /** @module react/persistence */
 
-const DB_NAME = "upupload";
+const DEFAULT_DB_NAME = "upupload";
 const STORE_NAME = "queue";
 const DB_VERSION = 1;
 
@@ -19,9 +19,18 @@ interface StoredItem {
   needsReselect?: boolean;
 }
 
-function openDB(): Promise<IDBDatabase> {
+/**
+ * Build the IndexedDB database name from an optional storage key prefix.
+ * Allows consumers to namespace storage (e.g. per-account or per-project) so
+ * they can manage cleanup independently.
+ */
+export function buildDbName(prefix?: string): string {
+  return prefix ? `${prefix}-upupload` : DEFAULT_DB_NAME;
+}
+
+function openDB(dbName: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    const req = indexedDB.open(dbName, DB_VERSION);
     req.onupgradeneeded = () => {
       req.result.createObjectStore(STORE_NAME, { keyPath: "id" });
     };
@@ -59,8 +68,11 @@ export function serializeForStorage<TMeta>(
   }));
 }
 
-export async function saveQueue(serialized: StoredItem[]): Promise<void> {
-  const db = await openDB();
+export async function saveQueue(
+  serialized: StoredItem[],
+  dbName: string = DEFAULT_DB_NAME,
+): Promise<void> {
+  const db = await openDB(dbName);
   const tx = db.transaction(STORE_NAME, "readwrite");
   const store = tx.objectStore(STORE_NAME);
   store.clear();
@@ -73,8 +85,8 @@ export async function saveQueue(serialized: StoredItem[]): Promise<void> {
   });
 }
 
-export async function loadQueue(): Promise<StoredItem[]> {
-  const db = await openDB();
+export async function loadQueue(dbName: string = DEFAULT_DB_NAME): Promise<StoredItem[]> {
+  const db = await openDB(dbName);
   const tx = db.transaction(STORE_NAME, "readonly");
   const store = tx.objectStore(STORE_NAME);
   const all = store.getAll();
@@ -84,8 +96,8 @@ export async function loadQueue(): Promise<StoredItem[]> {
   });
 }
 
-export async function clearQueue(): Promise<void> {
-  const db = await openDB();
+export async function clearQueue(dbName: string = DEFAULT_DB_NAME): Promise<void> {
+  const db = await openDB(dbName);
   const tx = db.transaction(STORE_NAME, "readwrite");
   const store = tx.objectStore(STORE_NAME);
   store.clear();

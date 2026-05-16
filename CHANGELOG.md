@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.5.0] — 2026-05-16
+
+### Added
+
+#### `FileStatus` Typed Enum
+
+- `FileStatus` type and const object exported from `@vivsh1999/upupload/react` so consumers can reference status values as `FileStatus.Complete` instead of guessing string literals.
+
+#### `onBeforeStart` Batch Hook
+
+- `onBeforeStart?: (files: FileUploadQueueItem[]) => Promise<unknown>` on `UseFileUploadOptions` — fires once before files enter the compression/upload pipeline, with the full list of pending files. Useful for batch pre-processing (e.g. `POST /bulk-init`).
+- The return value is passed to every adapter call in the batch via `helpers.batch.preload`.
+
+#### Adapter Batch Context
+
+- `helpers.batch?: { files, batchId, preload }` on the `UploadAdapter` helpers — provides the adapter with the full batch picture, enabling coordinated upload strategies (e.g. waiting for all files before acting).
+- `helpers.batch.files` — all files in the current batch.
+- `helpers.batch.batchId` — a unique identifier for the batch dispatch.
+- `helpers.batch.preload` — the value returned by `onBeforeStart`, if configured.
+
+#### Configurable Storage Key Prefix
+
+- `storageKeyPrefix?: string` on `UseFileUploadOptions` — when `persistence: "indexeddb"`, the database name becomes `"<prefix>-upupload"` instead of the default `"upupload"`. Enables multi-tenant or multi-account isolation for IndexedDB state.
+
+#### Pipeline Flow Documentation
+
+- Added a file processing flow diagram and throttle interaction table to the README, clarifying how `maxConcurrency`, `maxUploadConcurrency`, and `maxQueuedUploads` interact.
+
+### Changed
+
+- `FileUploadQueueItem.status` now uses the exported `FileStatus` type instead of an inline union.
+- Added comprehensive JSDoc to every field of `FileUploadQueueItem` for better IDE autocompletion.
+- `retryUpload` JSDoc now explicitly documents that the pipeline is **not** re-run, and that the adapter must be idempotent.
+
+### Fixed
+
+- `onBeforeStart` was missing — the earliest hook previously was `onFileProcessed`, which fires after pipeline processing.
+
 ## [0.2.0] — 2026-05-11
 
 ### Added
