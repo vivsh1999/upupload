@@ -109,6 +109,12 @@ export type UploadAdapter = (
   helpers: {
     onProgress: (progress: number) => void;
     signal?: AbortSignal;
+    /** ID of the file this artifact belongs to. */
+    fileId: string;
+    /** Total number of artifacts for this file. */
+    totalArtifacts: number;
+    /** Index of this artifact within the file's artifact list (0-based). */
+    artifactIndex: number;
     /** Context about the current batch of files being processed. */
     batch?: {
       /** All files in this batch, enabling the adapter to see the full picture. */
@@ -133,6 +139,20 @@ export interface BatchCompleteStats {
   totalBytes: number;
   /** Elapsed time in ms since the first batch started. */
   totalTimeMs: number;
+}
+
+/** Live progress stats for an active batch. */
+export interface BatchProgressStats {
+  /** Total number of files in the batch. */
+  totalFiles: number;
+  /** Number of files that completed successfully. */
+  succeeded: number;
+  /** Number of files that failed. */
+  failed: number;
+  /** Total bytes across all files in the batch (sum of original file sizes). */
+  totalBytes: number;
+  /** Estimated uploaded bytes based on per-file progress. */
+  uploadedBytes: number;
 }
 
 export interface UseFileUploadOptions<TMeta = void> {
@@ -192,6 +212,8 @@ export interface UseFileUploadOptions<TMeta = void> {
   onFileComplete?: (item: FileUploadQueueItem<TMeta>) => void;
   /** Fires when the system transitions from busy to idle with cumulative batch stats. */
   onBatchComplete?: (stats: BatchCompleteStats) => void;
+  /** Fires during batch processing with live stats. Useful for rendering a global progress bar. */
+  onBatchProgress?: (stats: BatchProgressStats) => void;
   /** Metadata factory called for each file added to the queue. */
   getMeta?: (file: File) => TMeta;
   /**
@@ -300,6 +322,7 @@ export function useFileUpload<TMeta = void>(
     onFileProcessed,
     onFileComplete,
     onBatchComplete,
+    onBatchProgress,
     getMeta,
     uploadAdapter,
     getPipelineContextMeta,
@@ -366,6 +389,7 @@ export function useFileUpload<TMeta = void>(
     onFileComplete,
     onError,
     onBatchComplete,
+    onBatchProgress,
     uploadAdapter,
     getPipelineContextMeta,
     onBeforeStart,
@@ -380,10 +404,30 @@ export function useFileUpload<TMeta = void>(
     onFileComplete,
     onError,
     onBatchComplete,
+    onBatchProgress,
     uploadAdapter,
     getPipelineContextMeta,
     onBeforeStart,
   };
+
+  const fireBatchProgress = useCallback(() => {
+    const { onBatchProgress } = processOptionsRef.current;
+    if (!onBatchProgress) return;
+    const q = queueRef.current;
+    const succeeded = q.filter((x) => x.status === "complete").length;
+    const failed = q.filter((x) => x.status === "error").length;
+    const uploadedBytes = q.reduce(
+      (sum, x) => sum + ((filesRef.current.get(x.id)?.size ?? 0) * x.progress) / 100,
+      0,
+    );
+    onBatchProgress({
+      totalFiles: batchStatsRef.current.totalFiles,
+      succeeded,
+      failed,
+      totalBytes: batchStatsRef.current.totalBytes,
+      uploadedBytes: Math.round(uploadedBytes),
+    });
+  }, []);
 
   const updateConfig = useCallback((patch: Partial<BrowserPipelineOptions>) => {
     setConfig((prev) => ({ ...prev, ...patch }));
@@ -651,8 +695,12 @@ export function useFileUpload<TMeta = void>(
                         q.id === item.id ? { ...q, progress: Math.min(overall, 99) } : q,
                       ),
                     );
+                    fireBatchProgress();
                   },
                   signal: controller.signal,
+                  fileId: item.id,
+                  totalArtifacts: total,
+                  artifactIndex: i,
                   batch: batchCtx
                     ? {
                         files: batchCtx.files,
@@ -731,6 +779,7 @@ export function useFileUpload<TMeta = void>(
       batchStatsRef.current.totalFiles += pending.length;
       batchStatsRef.current.totalBytes += batchBytes;
 
+      fireBatchProgress();
       setIsBusy(true);
 
       // Generate a unique batch ID for this dispatch
@@ -750,10 +799,11 @@ export function useFileUpload<TMeta = void>(
 
       try {
         await Promise.all(
-          pending.map((item) => {
+          pending.map(async (item) => {
             const file = filesRef.current.get(item.id);
-            if (!file) return Promise.resolve();
-            return semRef.current.run(() => processFile(item, file));
+            if (!file) return;
+            await semRef.current.run(() => processFile(item, file));
+            fireBatchProgress();
           }),
         );
       } finally {
@@ -845,8 +895,12 @@ export function useFileUpload<TMeta = void>(
                     q.id === fileId ? { ...q, progress: Math.min(overall, 99) } : q,
                   ),
                 );
+                fireBatchProgress();
               },
               signal: controller.signal,
+              fileId,
+              totalArtifacts: total,
+              artifactIndex: i,
             },
           );
         }

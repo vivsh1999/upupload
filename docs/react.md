@@ -71,6 +71,7 @@ interface UseFileUploadOptions<TMeta = void> {
   onFileProcessed?: (item: FileUploadQueueItem<TMeta>) => void;
   onFileComplete?: (item: FileUploadQueueItem<TMeta>) => void;
   onBatchComplete?: (stats: BatchCompleteStats) => void;
+  onBatchProgress?: (stats: BatchProgressStats) => void; // Live batch progress during processing/uploads
 }
 ```
 
@@ -90,6 +91,7 @@ interface UseFileUploadOptions<TMeta = void> {
 | `onFileProcessed`        | Fires after pipeline completes (before upload adapter).                 |
 | `onFileComplete`         | Fires after pipeline AND upload adapter resolve.                        |
 | `onBatchComplete`        | Fires with cumulative stats when system transitions busy→idle.          |
+| `onBatchProgress`        | Fires during processing/uploads with live batch stats.                  |
 
 ### Return Value
 
@@ -142,8 +144,26 @@ interface FileUploadQueueItem<TMeta = void> {
 ```ts
 type UploadAdapter = (
   artifact: { variant: string; blob: Blob; filename: string; filetype: string },
-  helpers: { onProgress: (progress: number) => void; signal?: AbortSignal },
+  helpers: {
+    onProgress: (progress: number) => void;
+    signal?: AbortSignal;
+    fileId: string; // File ID this artifact belongs to
+    totalArtifacts: number; // Total artifacts for this file
+    artifactIndex: number; // Index of this artifact (0-based)
+  },
 ) => Promise<void>;
+```
+
+### BatchProgressStats
+
+```ts
+interface BatchProgressStats {
+  totalFiles: number;
+  succeeded: number;
+  failed: number;
+  totalBytes: number; // Sum of original file sizes
+  uploadedBytes: number; // Estimated from per-file progress
+}
 ```
 
 ### BatchCompleteStats
@@ -163,13 +183,23 @@ interface BatchCompleteStats {
 ```tsx
 useFileUpload({
   plugins: [jpegCompressor.with({ quality: 80 })],
-  uploadAdapter: async (artifact, { onProgress, signal }) => {
+  uploadAdapter: async (
+    artifact,
+    { onProgress, signal, fileId, artifactIndex, totalArtifacts },
+  ) => {
+    // fileId, artifactIndex, totalArtifacts available for S3 multipart coordination
     await fetch("/api/upload", {
       method: "PUT",
       body: artifact.blob,
       headers: { "Content-Type": artifact.filetype },
       signal, // AbortSignal propagates from cancelUpload/cancelAll
     });
+  },
+  onBatchProgress: (stats) => {
+    // Render a global progress bar
+    console.log(
+      `${stats.succeeded}/${stats.totalFiles} done, ${stats.uploadedBytes}/${stats.totalBytes} bytes`,
+    );
   },
   onFileProcessed: (item) => {
     console.log(`${item.name} processed, starting upload...`);

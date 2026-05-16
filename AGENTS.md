@@ -293,6 +293,7 @@ Key features:
 - **`onFileProcessed`** — fires after pipeline completes, before upload adapter
 - **`onFileComplete`** — fires after both pipeline and upload adapter resolve
 - **`onBatchComplete`** — cumulative stats when all files finish processing
+- **`onBatchProgress`** — live batch stats during processing/uploads
 - **Statuses**: `"idle" | "processing" | "uploading" | "complete" | "error"`
 - **Upload adapter** — generic function type, user brings their own upload implementation
 - **`autoPauseOnOffline`** — auto-pauses on network disconnect
@@ -330,6 +331,7 @@ interface UseFileUploadOptions<TMeta = void> {
   onFileProcessed?: (item: FileUploadQueueItem<TMeta>) => void;
   onFileComplete?: (item: FileUploadQueueItem<TMeta>) => void;
   onBatchComplete?: (stats: BatchCompleteStats) => void;
+  onBatchProgress?: (stats: BatchProgressStats) => void;
 }
 ```
 
@@ -384,7 +386,13 @@ interface FileUploadQueueItem<TMeta = void> {
 ```ts
 type UploadAdapter = (
   artifact: { variant: string; blob: Blob; filename: string; filetype: string },
-  helpers: { onProgress: (progress: number) => void; signal?: AbortSignal },
+  helpers: {
+    onProgress: (progress: number) => void;
+    signal?: AbortSignal;
+    fileId: string; // file this artifact belongs to
+    totalArtifacts: number; // total artifacts for this file
+    artifactIndex: number; // index of this artifact (0-based)
+  },
 ) => Promise<void>;
 ```
 
@@ -397,6 +405,18 @@ interface BatchCompleteStats {
   failed: number; // Files with status "error"
   totalBytes: number; // Cumulative bytes
   totalTimeMs: number; // Elapsed since first batch started
+}
+```
+
+### BatchProgressStats
+
+```ts
+interface BatchProgressStats {
+  totalFiles: number; // Total files in the batch
+  succeeded: number; // Files completed successfully
+  failed: number; // Files that failed
+  totalBytes: number; // Sum of original file sizes
+  uploadedBytes: number; // Estimated from per-file progress
 }
 ```
 
