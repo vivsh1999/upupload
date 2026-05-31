@@ -1,16 +1,8 @@
 import { blobToArrayBuffer, jpegFileFromImageData } from "./_rasterize";
 
-async function optionalImport<TModule = unknown>(moduleName: string): Promise<TModule | null> {
-  try {
-    return await import(moduleName);
-  } catch {
-    return null;
-  }
-}
-
 export async function tryDecodeHeicToJpegFile(source: File): Promise<File | null> {
   try {
-    const mod = await optionalImport<{ default: unknown }>("heic-decode");
+    const mod = (await import("heic-decode").catch(() => null)) as { default: unknown } | null;
     if (!mod) throw new Error("missing");
     const decode = mod.default as unknown as (options: { buffer: ArrayBuffer }) => Promise<{
       width: number;
@@ -28,7 +20,7 @@ export async function tryDecodeHeicToJpegFile(source: File): Promise<File | null
   } catch {}
 
   try {
-    const mod = await optionalImport<{ default: unknown }>("heic2any");
+    const mod = (await import("heic2any").catch(() => null)) as { default: unknown } | null;
     if (!mod) throw new Error("missing");
     const heic2any = mod.default as unknown as (options: {
       blob: Blob;
@@ -49,7 +41,7 @@ export async function tryDecodeHeicToJpegFile(source: File): Promise<File | null
 
 export async function tryDecodeTiffToJpegFile(source: File): Promise<File | null> {
   try {
-    const UTIF = await optionalImport<any>("utif");
+    const UTIF = await import("utif").catch(() => null);
     if (!UTIF) throw new Error("missing");
     const buffer = await blobToArrayBuffer(source);
     const ifds = UTIF.decode(buffer);

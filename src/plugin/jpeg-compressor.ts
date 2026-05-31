@@ -4,31 +4,19 @@ import { PIPELINE_CURRENT_KEY } from "../core/constants";
 import { Plugin } from "./plugin";
 import { warning, artifact } from "../core/result";
 import { jpegFileFromBlob } from "./_rasterize";
+// @ts-expect-error - browser-image-compression has no TS types
+import __imageCompression from "browser-image-compression";
 
 type ImageCompressionFn = (
   file: File | Blob,
   options: Record<string, unknown>,
 ) => Promise<File | Blob>;
 
-let compressionModulePromise: Promise<ImageCompressionFn> | null = null;
-
-const BIC = "browser-image-compression";
-
 async function loadImageCompression(): Promise<ImageCompressionFn> {
-  if (!compressionModulePromise) {
-    compressionModulePromise = import(BIC)
-      .then((mod: { default: ImageCompressionFn }) => mod.default)
-      .catch(() => {
-        compressionModulePromise = null;
-        throw new Error("browser-image-compression not available");
-      });
-  }
-  return compressionModulePromise;
+  return __imageCompression;
 }
 
-function preloadImageCompression() {
-  void loadImageCompression();
-}
+function preloadImageCompression() {}
 
 function isAnyImage(file: { name: string; type?: string | null }): boolean {
   const ext = fileExtensionLower(file.name);

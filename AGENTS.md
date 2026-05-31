@@ -64,30 +64,12 @@ See: https://jsr.io/docs/writing-docs
 
 # Publishing
 
-## npm
+Publishing is handled automatically by CI/CD. **Do not publish manually.**
 
-```bash
-pnpm build
-pnpm publish
-```
+## Trigger a Release
 
-Requirements:
-
-- Logged into npm (`npm login`)
-- Package is public (already configured via `publishConfig.access = "public"`)
-- Version bump as needed before publish
-
-## JSR
-
-```bash
-pnpm build
-npx jsr publish
-```
-
-Requirements:
-
-- Authenticated at https://jsr.io (run `npx jsr auth` or use `JSR_TOKEN` env var)
-- Version bump as needed before publish
+1. Create a GitHub release with a semver tag (e.g., `v0.5.3`)
+2. CI workflow (`.github/workflows/ci.yml`) picks up the tag, syncs the version into `package.json` and `jsr.json`, commits the bump, then publishes to both npm and JSR
 
 # Architecture & API
 

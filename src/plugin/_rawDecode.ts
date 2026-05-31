@@ -15,20 +15,15 @@ type LibRawCtor = new () => {
   free?: () => Promise<void> | void;
 };
 
-const LW = "libraw-wasm";
+import __LibRaw from "libraw-wasm";
 
-let libRawCtorPromise: Promise<LibRawCtor> | null = null;
+let libRawCtorPromise = Promise.resolve(__LibRaw as LibRawCtor);
 
 function getLibRawCtor() {
-  if (!libRawCtorPromise) {
-    libRawCtorPromise = import(LW).then((m: { default: LibRawCtor }) => m.default);
-  }
   return libRawCtorPromise;
 }
 
-export function preloadRawDecoder() {
-  void getLibRawCtor();
-}
+export function preloadRawDecoder() {}
 
 const HAS_OFFSCREEN_CANVAS = typeof OffscreenCanvas !== "undefined";
 
