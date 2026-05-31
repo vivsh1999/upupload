@@ -4,8 +4,7 @@ import { PIPELINE_CURRENT_KEY } from "../core/constants";
 import { Plugin } from "./plugin";
 import { warning, artifact } from "../core/result";
 import { jpegFileFromBlob } from "./_rasterize";
-// @ts-expect-error - browser-image-compression has no TS types
-import __imageCompression from "browser-image-compression";
+import imageCompression from "browser-image-compression";
 
 type ImageCompressionFn = (
   file: File | Blob,
@@ -13,7 +12,7 @@ type ImageCompressionFn = (
 ) => Promise<File | Blob>;
 
 async function loadImageCompression(): Promise<ImageCompressionFn> {
-  return __imageCompression;
+  return imageCompression as unknown as ImageCompressionFn;
 }
 
 function preloadImageCompression() {}
