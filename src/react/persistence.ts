@@ -47,7 +47,7 @@ export function serializeForStorage<TMeta>(
     progress: number;
     error?: string;
     meta?: TMeta;
-    file: File;
+    file?: File;
     artifacts?: { variant: string; filename: string }[];
     needsReselect?: boolean;
   }[],
@@ -59,10 +59,10 @@ export function serializeForStorage<TMeta>(
     progress: item.progress,
     error: item.error,
     meta: item.meta as unknown,
-    fileName: item.file.name,
-    fileSize: item.file.size,
-    fileType: item.file.type,
-    fileLastModified: item.file.lastModified,
+    fileName: item.file?.name ?? item.name,
+    fileSize: item.file?.size ?? 0,
+    fileType: item.file?.type ?? "",
+    fileLastModified: item.file?.lastModified ?? 0,
     artifacts: item.artifacts?.map((a) => ({ variant: a.variant, filename: a.filename })),
     needsReselect: item.needsReselect,
   }));
