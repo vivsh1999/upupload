@@ -9,7 +9,7 @@ import type { PipelineDef } from "../browser/pipeline";
 import { Semaphore } from "./utils";
 import { saveQueue, loadQueue, serializeForStorage, buildDbName } from "./persistence";
 
-export type { BrowserPipelineOptions, PipelineDef } from "../browser/pipeline";
+export type { BrowserPipelineOptions, LogLevel, PipelineDef } from "../browser/pipeline";
 export { Plugin } from "../plugin/plugin";
 export type { ProcessingPlugin, FileClassification } from "../plugin/types";
 export { Semaphore } from "./utils";
@@ -370,7 +370,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
   } = options ?? {};
 
   const [config, setConfig] = useState<BrowserPipelineOptions>({
-    debug: pipelineConfig?.debug ?? DEFAULT_BROWSER_PIPELINE_OPTIONS.debug,
+    logLevel: pipelineConfig?.logLevel ?? DEFAULT_BROWSER_PIPELINE_OPTIONS.logLevel,
   });
 
   const [queue, setQueue] = useState<FileUploadQueueItem<TMeta>[]>([]);
@@ -805,7 +805,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
         currentOnFileComplete?.(completedItem);
       } catch (err) {
         if (controller.signal.aborted) return;
-        const message = err instanceof Error ? err.message : "Unknown error";
+        const message = err instanceof Error ? err.message : String(err);
         setQueue((prev) =>
           prev.map((q) =>
             q.id === item.id
@@ -984,7 +984,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
       onDone?.(completed);
     } catch (err) {
       if (controller.signal.aborted) return;
-      const message = err instanceof Error ? err.message : "Unknown error";
+      const message = err instanceof Error ? err.message : String(err);
       setQueue((prev) =>
         prev.map((q) => (q.id === fileId ? { ...q, status: "error" as const, error: message } : q)),
       );

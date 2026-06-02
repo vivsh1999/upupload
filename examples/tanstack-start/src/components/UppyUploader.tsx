@@ -25,7 +25,7 @@ export function UppyUploader() {
     <ClientOnly fallback={<UploadLoadingCard />}>
       <MediaUploadField
         pipelineConfig={{
-          debug: true,
+          logLevel: "debug",
         }}
         fileInputProps={{ accept: MEDIA_PICKER_ACCEPT }}
         folderInputProps={{ accept: MEDIA_PICKER_ACCEPT }}

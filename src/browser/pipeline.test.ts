@@ -243,7 +243,7 @@ describe("media type handling", () => {
 
 describe("debug logging", () => {
   it("processes normally when debug is enabled", async () => {
-    const result = await runDefaultBrowserPipeline(source(), { debug: true });
+    const result = await runDefaultBrowserPipeline(source(), { logLevel: "debug" });
     expect(result.removeFromQueue).toBe(false);
     expect(result.artifacts).toHaveLength(1);
   });

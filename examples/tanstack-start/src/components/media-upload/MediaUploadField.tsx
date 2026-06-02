@@ -102,8 +102,8 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
   return (
     <div data-slot="media-upload-field" className={className}>
       <MediaUploadSkeleton
-        debug={media.config.debug ?? false}
-        onDebugChange={(value) => media.updateConfig({ debug: value })}
+        debug={media.config.logLevel === "debug"}
+        onDebugChange={(value) => media.updateConfig({ logLevel: value ? "debug" : "silent" })}
         optimizedEnabled={optimizedEnabled}
         thumbnailEnabled={thumbnailEnabled}
         onOptimizedEnabledChange={setOptimizedEnabled}
