@@ -407,12 +407,13 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
   const dbName = buildDbName(storageKeyPrefix);
 
   const [isPaused, setIsPaused] = useState(false);
-  const pauseRef = useRef<{ paused: boolean; resolve: (() => void) | null }>({
+  const pauseRef = useRef<{ paused: boolean; resolvers: Set<() => void> }>({
     paused: false,
-    resolve: null,
+    resolvers: new Set(),
   });
 
   const restoredRef = useRef(false);
+  const warnedRef = useRef<Set<string>>(new Set());
 
   const processOptionsRef = useRef({
     config,
@@ -502,7 +503,19 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
         });
       }
 
-      const sliced = maxNumberOfFiles != null ? filtered.slice(0, maxNumberOfFiles) : filtered;
+      let sliced = filtered;
+      if (maxNumberOfFiles != null) {
+        const existing = queueRef.current.length;
+        const headroom = Math.max(0, maxNumberOfFiles - existing);
+        if (headroom === 0) {
+          warn?.(`Maximum of ${maxNumberOfFiles} files already queued.`);
+          return;
+        }
+        if (filtered.length > headroom) {
+          warn?.(`Only ${headroom} more file(s) can be added (limit: ${maxNumberOfFiles}).`);
+        }
+        sliced = filtered.slice(0, headroom);
+      }
 
       const newItems: FileUploadQueueItem<TMeta>[] = [];
       for (const file of sliced) {
@@ -566,7 +579,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
   const dragEnterCounterRef = useRef(0);
 
   const getDropTargetProps = useCallback(
-    <T extends Omit<HTMLAttributes<HTMLDivElement>, "onDrop" | "onDragOver">>(props?: T) => {
+    <T extends HTMLAttributes<HTMLDivElement>>(props?: T) => {
       return {
         ...props,
         onDrop: (event: DragEvent<HTMLDivElement>) => {
@@ -576,14 +589,17 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
           if (event.dataTransfer?.files) {
             addFiles(event.dataTransfer.files);
           }
+          (props as any)?.onDrop?.(event);
         },
         onDragOver: (event: DragEvent<HTMLDivElement>) => {
           event.preventDefault();
+          (props as any)?.onDragOver?.(event);
         },
         onDragEnter: (event: DragEvent<HTMLDivElement>) => {
           event.preventDefault();
           dragEnterCounterRef.current++;
           setIsDragOver(true);
+          (props as any)?.onDragEnter?.(event);
         },
         onDragLeave: (event: DragEvent<HTMLDivElement>) => {
           event.preventDefault();
@@ -592,6 +608,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
             dragEnterCounterRef.current = 0;
             setIsDragOver(false);
           }
+          (props as any)?.onDragLeave?.(event);
         },
       } as T & {
         onDrop: (event: DragEvent<HTMLDivElement>) => void;
@@ -651,8 +668,19 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
           onPauseCheck: async () => {
             if (pauseRef.current.paused) {
               await new Promise<void>((resolve) => {
-                pauseRef.current.resolve = resolve;
+                pauseRef.current.resolvers.add(resolve);
               });
+            }
+          },
+          onProgress: (event) => {
+            if (event.phase === "start") {
+              totalStages = event.totalStages;
+            } else if (event.phase === "end") {
+              completedStages++;
+              const overall = (completedStages / totalStages) * 90;
+              setQueue((prev) =>
+                prev.map((q) => (q.id === item.id ? { ...q, progress: Math.min(overall, 89) } : q)),
+              );
             }
           },
           onStageProgress: (_stageId, progress) => {
@@ -677,6 +705,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
         if (result.removeFromQueue) {
           setQueue((prev) => prev.filter((q) => q.id !== item.id));
           abortControllersRef.current.delete(item.id);
+          filesRef.current.delete(item.id);
           return;
         }
 
@@ -712,10 +741,16 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
           );
 
           // Acquire upload semaphore slot
-          await uploadSemRef.current.acquire();
+          await uploadSemRef.current.acquire(controller.signal);
           try {
             const total = result.artifacts.length;
             for (let i = 0; i < total; i++) {
+              // Pause check between artifact uploads
+              if (pauseRef.current.paused) {
+                await new Promise<void>((resolve) => {
+                  pauseRef.current.resolvers.add(resolve);
+                });
+              }
               const a = result.artifacts[i]!;
               const blob = a.file instanceof Blob ? a.file : new Blob([a.file]);
               if (controller.signal.aborted) return;
@@ -879,6 +914,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
       return prev.filter((q) => q.id !== fileId);
     });
     abortControllersRef.current.delete(fileId);
+    filesRef.current.delete(fileId);
   }, []);
 
   const cancelAll = useCallback(() => {
@@ -966,6 +1002,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
         retryUpload(fileId).catch(() => {});
         return;
       }
+      warnedRef.current.delete(fileId);
       setQueue((prev) =>
         prev.map((q) => {
           if (q.id !== fileId) return q;
@@ -982,13 +1019,16 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
       item.artifacts?.forEach((a) => a.url && URL.revokeObjectURL(a.url));
       if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
     }
+    filesRef.current.clear();
+    warnedRef.current.clear();
     setQueue([]);
   }, []);
 
   useEffect(() => {
     if (!onWarning) return;
     for (const item of queue) {
-      if (item.status === "error" && item.error) {
+      if (item.status === "error" && item.error && !warnedRef.current.has(item.id)) {
+        warnedRef.current.add(item.id);
         onWarning(item.error);
       }
     }
@@ -1006,6 +1046,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
     if (!autoPreventTabClose || !isBusy) return;
     const handler = (e: BeforeUnloadEvent) => {
       e.preventDefault();
+      e.returnValue = "";
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
@@ -1025,26 +1066,13 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
           return {
             id: s.id,
             name: s.name,
-            ...(isAlive
-              ? {
-                  file: new File([], s.fileName, {
-                    type: s.fileType,
-                    lastModified: s.fileLastModified,
-                  }),
-                }
-              : {}),
             status: (isAlive ? "complete" : "error") as FileUploadQueueItem<TMeta>["status"],
             progress: isAlive ? 100 : 0,
             error: isAlive
               ? undefined
               : "File unavailable after page reload. Drop the file again to re-process.",
             meta: s.meta as TMeta,
-            needsReselect: !isAlive,
-            artifacts: s.artifacts?.map((a) => ({
-              variant: a.variant,
-              filename: a.filename,
-              blob: new Blob(),
-            })),
+            needsReselect: true,
           } as FileUploadQueueItem<TMeta>;
         });
         setQueue(restored);
@@ -1076,8 +1104,10 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
   const resume = useCallback(() => {
     if (!pauseRef.current.paused) return;
     pauseRef.current.paused = false;
-    pauseRef.current.resolve?.();
-    pauseRef.current.resolve = null;
+    for (const resolve of pauseRef.current.resolvers) {
+      resolve();
+    }
+    pauseRef.current.resolvers.clear();
     setIsPaused(false);
     void startUpload();
   }, [startUpload]);

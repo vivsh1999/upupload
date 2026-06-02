@@ -148,6 +148,7 @@ export async function runDefaultBrowserPipeline(
     onStageProgress?: (stageId: string, progress: number) => void;
     onPauseCheck?: () => Promise<void>;
     pipelineContextMeta?: Record<string, unknown>;
+    onProgress?: (event: import("../core/types").PipelineProgressEvent) => void;
   },
 ): Promise<PipelineResult> {
   // If pipeline definitions are provided, use the first matching one;
@@ -295,6 +296,7 @@ export async function runDefaultBrowserPipeline(
     signal,
     onStageProgress: extra?.onStageProgress,
     onPauseCheck: extra?.onPauseCheck,
+    onProgress: extra?.onProgress,
   });
 
   // Filter out any artifact flagged with `skip: true`

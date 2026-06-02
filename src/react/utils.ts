@@ -1,35 +1,33 @@
-/** @module react/utils */
-
-/**
- * Bounded concurrency semaphore.
- * Limits how many async operations run simultaneously.
- *
- * Useful for controlling upload concurrency outside the hook, e.g. when
- * uploading artifacts via fetch or XHR.
- *
- * @example
- * ```ts
- * import { Semaphore } from "@vivsh1999/upupload/react";
- *
- * const sem = new Semaphore(4); // max 4 concurrent uploads
- * await sem.run(() => fetch("/api/upload", { method: "PUT", body: blob }));
- * ```
- */
 export class Semaphore {
   private running = 0;
-  private queue: Array<() => void> = [];
+  private queue: Array<{ resolve: () => void; reject: (err: Error) => void }> = [];
 
   constructor(public readonly max: number) {}
 
-  async acquire(): Promise<void> {
+  async acquire(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     if (this.running < this.max) {
       this.running++;
       return;
     }
-    return new Promise<void>((resolve) => {
-      this.queue.push(() => {
-        this.running++;
-        resolve();
+    return new Promise<void>((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new DOMException("Aborted", "AbortError"));
+        return;
+      }
+      const onAbort = () => {
+        const idx = this.queue.findIndex((w) => w.resolve === resolve);
+        if (idx !== -1) this.queue.splice(idx, 1);
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      this.queue.push({
+        resolve: () => {
+          signal?.removeEventListener("abort", onAbort);
+          this.running++;
+          resolve();
+        },
+        reject,
       });
     });
   }
@@ -37,11 +35,11 @@ export class Semaphore {
   release(): void {
     this.running--;
     const next = this.queue.shift();
-    if (next) next();
+    if (next) next.resolve();
   }
 
-  async run<T>(fn: () => Promise<T>): Promise<T> {
-    await this.acquire();
+  async run<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    await this.acquire(signal);
     try {
       return await fn();
     } finally {
