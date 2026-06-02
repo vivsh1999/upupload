@@ -24,6 +24,36 @@ export { PIPELINE_CURRENT_KEY } from "../core/constants";
 export const PIPELINE_CLASSIF_KEY = "pipeline:classif";
 
 // ---------------------------------------------------------------------------
+// Log levels
+// ---------------------------------------------------------------------------
+
+/**
+ * Log verbosity levels for the browser pipeline.
+ *
+ * - `"silent"` — no console output (default)
+ * - `"error"` — only errors
+ * - `"warn"` — errors + warnings
+ * - `"info"` — errors + warnings + info messages
+ * - `"debug"` — everything, including internal pipeline trace logs
+ */
+export const LOG_LEVELS = ["silent", "error", "warn", "info", "debug"] as const;
+
+export type LogLevel = (typeof LOG_LEVELS)[number];
+
+/**
+ * Check whether the configured log level permits messages at the given target level.
+ *
+ * @example
+ * ```ts
+ * isLevelEnabled("warn", "debug") // false
+ * isLevelEnabled("debug", "warn") // true
+ * ```
+ */
+export function isLevelEnabled(configured: LogLevel, target: LogLevel): boolean {
+  return LOG_LEVELS.indexOf(configured) >= LOG_LEVELS.indexOf(target);
+}
+
+// ---------------------------------------------------------------------------
 // Options type & defaults
 // ---------------------------------------------------------------------------
 
@@ -34,16 +64,21 @@ export const PIPELINE_CLASSIF_KEY = "pipeline:classif";
  * ```ts
  * import { runDefaultBrowserPipeline } from "@vivsh1999/upupload/browser";
  *
- * await runDefaultBrowserPipeline(source, { debug: true });
+ * await runDefaultBrowserPipeline(source, { logLevel: "debug" });
  * ```
  */
 export type BrowserPipelineOptions = {
-  /** Enable debug logging to console. */
-  debug?: boolean;
+  /**
+   * Log verbosity level. Controls which `ctx.log()` calls in plugins and
+   * internal pipeline trace messages are printed to the browser console.
+   *
+   * @default "silent"
+   */
+  logLevel?: LogLevel;
 };
 
 export const DEFAULT_BROWSER_PIPELINE_OPTIONS: BrowserPipelineOptions = {
-  debug: false,
+  logLevel: "silent",
 };
 
 // ---------------------------------------------------------------------------

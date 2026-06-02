@@ -9,15 +9,17 @@ import {
 } from "./allowlist";
 import {
   info,
+  isLevelEnabled,
   PIPELINE_CURRENT_KEY,
   PIPELINE_CLASSIF_KEY,
   resolvePipeline,
   stem,
 } from "./pipeline-utils";
+import type { LogLevel } from "./pipeline-utils";
 import type { BrowserPipelineOptions, PipelineDef } from "./pipeline-utils";
 import type { FileClassification, ProcessingPlugin } from "../plugin/types";
 
-export type { BrowserPipelineOptions, PipelineDef } from "./pipeline-utils";
+export type { BrowserPipelineOptions, LogLevel, PipelineDef } from "./pipeline-utils";
 export {
   DEFAULT_BROWSER_PIPELINE_OPTIONS,
   PIPELINE_CURRENT_KEY,
@@ -171,7 +173,8 @@ export async function runDefaultBrowserPipeline(
   }
 
   const log = (level: "debug" | "info" | "warn" | "error", message: string, extra?: unknown) => {
-    if (!pipelineOpts.debug) return;
+    const configured: LogLevel = pipelineOpts.logLevel ?? "silent";
+    if (!isLevelEnabled(configured, level)) return;
     const prefix = `[@vivsh1999/upupload] ${input.name}`;
     const fn = console[level] ?? console.log;
     fn(prefix, message, extra ?? "");
