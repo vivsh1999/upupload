@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent, HTMLAttributes, ComponentProps } from "react";
 import type { BrowserPipelineOptions } from "../browser/pipeline";
 import { DEFAULT_BROWSER_PIPELINE_OPTIONS, runDefaultBrowserPipeline } from "../browser/pipeline";
-import type { PipelineSource } from "../core/types";
+import type { PipelineResult, PipelineSource } from "../core/types";
 import type { ProcessingPlugin } from "../plugin/types";
 import type { PipelineDef } from "../browser/pipeline";
 import { Semaphore } from "./utils";
@@ -638,99 +638,117 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
       const controller = new AbortController();
       abortControllersRef.current.set(item.id, controller);
 
+      let processingSemAcquired = false;
       try {
         if (controller.signal.aborted) return;
         if (item.needsReselect) return; // File blob unavailable
 
-        setQueue((prev) =>
-          prev.map((q) =>
-            q.id === item.id ? { ...q, status: "processing" as const, progress: 0 } : q,
-          ),
-        );
+        await semRef.current.acquire(controller.signal);
+        processingSemAcquired = true;
 
-        const source: PipelineSource = {
-          file,
-          name: file.name,
-          type: file.type || "application/octet-stream",
-        };
+        let result: PipelineResult;
+        let artifactPreviews: Array<{
+          variant: string;
+          filename: string;
+          blob: Blob;
+          url: string;
+        }>;
+        try {
+          setQueue((prev) =>
+            prev.map((q) =>
+              q.id === item.id ? { ...q, status: "processing" as const, progress: 0 } : q,
+            ),
+          );
 
-        // Track stage progress for granular 0-90% range
-        let completedStages = 0;
-        let totalStages = 0;
+          const source: PipelineSource = {
+            file,
+            name: file.name,
+            type: file.type || "application/octet-stream",
+          };
 
-        const pipelineContextMeta = currentGetPipelineContextMeta?.();
+          // Track stage progress for granular 0-90% range
+          let completedStages = 0;
+          let totalStages = 0;
 
-        const result = await runDefaultBrowserPipeline(source, currentConfig, {
-          plugins: currentPlugins,
-          pipeline: currentPipeline,
-          signal: controller.signal,
-          pipelineContextMeta,
-          onPauseCheck: async () => {
-            if (pauseRef.current.paused) {
-              await new Promise<void>((resolve) => {
-                pauseRef.current.resolvers.add(resolve);
-              });
-            }
-          },
-          onProgress: (event) => {
-            if (event.phase === "start") {
-              totalStages = event.totalStages;
-            } else if (event.phase === "end") {
-              completedStages++;
-              const overall = (completedStages / totalStages) * 90;
+          const pipelineContextMeta = currentGetPipelineContextMeta?.();
+
+          result = await runDefaultBrowserPipeline(source, currentConfig, {
+            plugins: currentPlugins,
+            pipeline: currentPipeline,
+            signal: controller.signal,
+            pipelineContextMeta,
+            onPauseCheck: async () => {
+              if (pauseRef.current.paused) {
+                await new Promise<void>((resolve) => {
+                  pauseRef.current.resolvers.add(resolve);
+                });
+              }
+            },
+            onProgress: (event) => {
+              if (event.phase === "start") {
+                totalStages = event.totalStages;
+              } else if (event.phase === "end") {
+                completedStages++;
+                const overall = (completedStages / totalStages) * 90;
+                setQueue((prev) =>
+                  prev.map((q) =>
+                    q.id === item.id ? { ...q, progress: Math.min(overall, 89) } : q,
+                  ),
+                );
+              }
+            },
+            onStageProgress: (_stageId, progress) => {
+              if (totalStages === 0) return;
+              const overall = ((completedStages + progress / 100) / totalStages) * 90;
               setQueue((prev) =>
                 prev.map((q) => (q.id === item.id ? { ...q, progress: Math.min(overall, 89) } : q)),
               );
+            },
+          });
+
+          if (controller.signal.aborted) return;
+
+          for (const msg of result.info) {
+            if (msg.level === "warn") {
+              currentOnWarning?.(msg.message);
+            } else {
+              currentOnInfo?.(msg.message);
             }
-          },
-          onStageProgress: (_stageId, progress) => {
-            if (totalStages === 0) return;
-            const overall = ((completedStages + progress / 100) / totalStages) * 90;
-            setQueue((prev) =>
-              prev.map((q) => (q.id === item.id ? { ...q, progress: Math.min(overall, 89) } : q)),
-            );
-          },
-        });
-
-        if (controller.signal.aborted) return;
-
-        for (const msg of result.info) {
-          if (msg.level === "warn") {
-            currentOnWarning?.(msg.message);
-          } else {
-            currentOnInfo?.(msg.message);
           }
-        }
 
-        if (result.removeFromQueue) {
-          setQueue((prev) => prev.filter((q) => q.id !== item.id));
-          abortControllersRef.current.delete(item.id);
-          filesRef.current.delete(item.id);
-          return;
-        }
+          if (result.removeFromQueue) {
+            setQueue((prev) => prev.filter((q) => q.id !== item.id));
+            abortControllersRef.current.delete(item.id);
+            filesRef.current.delete(item.id);
+            return;
+          }
 
-        const artifactPreviews = result.artifacts.map((a) => {
-          const blob = a.file instanceof Blob ? a.file : new Blob([a.file]);
-          const url = URL.createObjectURL(blob);
-          return {
-            variant: a.variant,
-            filename: a.filename,
-            blob,
-            url,
+          artifactPreviews = result.artifacts.map((a) => {
+            const blob = a.file instanceof Blob ? a.file : new Blob([a.file]);
+            const url = URL.createObjectURL(blob);
+            return {
+              variant: a.variant,
+              filename: a.filename,
+              blob,
+              url,
+            };
+          });
+
+          // Save artifacts immediately so upload adapter errors preserve them
+          const processedItem: FileUploadQueueItem<TMeta> = {
+            ...item,
+            status: "processing" as const,
+            progress: 90,
+            artifacts: artifactPreviews,
+            previewUrl: artifactPreviews[0]?.url,
+            needsReselect: false,
           };
-        });
-
-        // Save artifacts immediately so upload adapter errors preserve them
-        const processedItem: FileUploadQueueItem<TMeta> = {
-          ...item,
-          status: "processing" as const,
-          progress: 90,
-          artifacts: artifactPreviews,
-          previewUrl: artifactPreviews[0]?.url,
-          needsReselect: false,
-        };
-        setQueue((prev) => prev.map((q) => (q.id === item.id ? processedItem : q)));
-        currentOnFileProcessed?.(processedItem);
+          setQueue((prev) => prev.map((q) => (q.id === item.id ? processedItem : q)));
+          currentOnFileProcessed?.(processedItem);
+        } finally {
+          semRef.current.release();
+          processingSemAcquired = false;
+        }
 
         // Upload artifacts if an adapter is configured
         if (currentUploadAdapter && result.artifacts.length > 0) {
@@ -805,6 +823,10 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
         currentOnFileComplete?.(completedItem);
       } catch (err) {
         if (controller.signal.aborted) return;
+        if (processingSemAcquired) {
+          semRef.current.release();
+          processingSemAcquired = false;
+        }
         const message = err instanceof Error ? err.message : String(err);
         setQueue((prev) =>
           prev.map((q) =>
@@ -878,7 +900,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
           pending.map(async (item) => {
             const file = filesRef.current.get(item.id);
             if (!file) return;
-            await semRef.current.run(() => processFile(item, file));
+            await processFile(item, file);
             fireBatchProgress();
           }),
         );
