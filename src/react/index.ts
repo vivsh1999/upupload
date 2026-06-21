@@ -653,6 +653,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
           blob: Blob;
           url: string;
         }>;
+        let pipelineEndProgress = 90;
         try {
           setQueue((prev) =>
             prev.map((q) =>
@@ -690,18 +691,18 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
               } else if (event.phase === "end") {
                 completedStages++;
                 const overall = (completedStages / totalStages) * 90;
+                pipelineEndProgress = Math.min(overall, 89);
                 setQueue((prev) =>
-                  prev.map((q) =>
-                    q.id === item.id ? { ...q, progress: Math.min(overall, 89) } : q,
-                  ),
+                  prev.map((q) => (q.id === item.id ? { ...q, progress: pipelineEndProgress } : q)),
                 );
               }
             },
             onStageProgress: (_stageId, progress) => {
               if (totalStages === 0) return;
               const overall = ((completedStages + progress / 100) / totalStages) * 90;
+              pipelineEndProgress = Math.min(overall, 89);
               setQueue((prev) =>
-                prev.map((q) => (q.id === item.id ? { ...q, progress: Math.min(overall, 89) } : q)),
+                prev.map((q) => (q.id === item.id ? { ...q, progress: pipelineEndProgress } : q)),
               );
             },
           });
@@ -738,7 +739,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
           const processedItem: FileUploadQueueItem<TMeta> = {
             ...item,
             status: "processing" as const,
-            progress: 90,
+            progress: pipelineEndProgress,
             artifacts: artifactPreviews,
             previewUrl: artifactPreviews[0]?.url,
             needsReselect: false,
@@ -754,7 +755,9 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
         if (currentUploadAdapter && result.artifacts.length > 0) {
           setQueue((prev) =>
             prev.map((q) =>
-              q.id === item.id ? { ...q, status: "uploading" as const, progress: 90 } : q,
+              q.id === item.id
+                ? { ...q, status: "uploading" as const, progress: pipelineEndProgress }
+                : q,
             ),
           );
 
@@ -782,7 +785,8 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
                 },
                 {
                   onProgress: (p) => {
-                    const overall = 90 + ((i + p / 100) / total) * 10;
+                    const overall =
+                      pipelineEndProgress + ((i + p / 100) / total) * (99 - pipelineEndProgress);
                     setQueue((prev) =>
                       prev.map((q) =>
                         q.id === item.id ? { ...q, progress: Math.min(overall, 99) } : q,
