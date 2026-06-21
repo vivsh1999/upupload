@@ -1,6 +1,6 @@
 {
   "name": "@vivsh1999/upupload",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "description": "Client-first, multi-stage file uploader/processor with safe fallback-to-original behavior",
   "license": "MIT",
   "repository": {
