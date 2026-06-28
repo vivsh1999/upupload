@@ -43,13 +43,19 @@ export type FileStatus = "idle" | "processing" | "uploading" | "complete" | "err
  * if (item.status === FileStatus.Complete) { … }
  * ```
  */
-export const FileStatus = {
+export const FileStatus: {
+  readonly Idle: "idle";
+  readonly Processing: "processing";
+  readonly Uploading: "uploading";
+  readonly Complete: "complete";
+  readonly Error: "error";
+} = {
   Idle: "idle" as const,
   Processing: "processing" as const,
   Uploading: "uploading" as const,
   Complete: "complete" as const,
   Error: "error" as const,
-} satisfies Record<string, FileStatus>;
+};
 
 /** A single file in the upload queue with processing state.
  *
