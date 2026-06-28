@@ -5,6 +5,7 @@
     "moduleResolution": "bundler",
     "verbatimModuleSyntax": true,
     "strict": true,
+    "exactOptionalPropertyTypes": true,
     "skipLibCheck": true,
     "noEmit": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],

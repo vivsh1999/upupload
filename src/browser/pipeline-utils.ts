@@ -266,7 +266,7 @@ export function info(
   message: string,
   code?: string,
 ): PipelineInfoMessage {
-  return { level, message, code };
+  return { level, message, ...(code !== undefined ? { code } : {}) };
 }
 
 // ---------------------------------------------------------------------------

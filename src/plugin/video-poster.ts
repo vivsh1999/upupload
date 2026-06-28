@@ -100,7 +100,7 @@ export const videoPoster: Plugin<VideoPosterPluginOptions> = new Plugin<VideoPos
               poster,
               poster.name,
               poster.type || "application/octet-stream",
-              { relativePath: input.relativePath },
+              input.relativePath !== undefined ? { relativePath: input.relativePath } : {},
             ),
           ]
         : [],

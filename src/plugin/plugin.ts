@@ -31,14 +31,16 @@ export class Plugin<TOpts = Record<string, unknown>> implements ProcessingPlugin
   readonly before?: string[];
 
   private _supports: ProcessingPlugin<TOpts>["supports"];
-  private _createStages?: ProcessingPlugin<TOpts>["createStages"];
-  private _runFn?: (
-    input: PipelineSource,
-    opts: TOpts,
-    classif: FileClassification,
-    ctx: PipelineContext,
-  ) => Promise<PipelineResult> | PipelineResult;
-  private _preload?: ProcessingPlugin<TOpts>["preload"];
+  private _createStages: ProcessingPlugin<TOpts>["createStages"] | undefined;
+  private _runFn:
+    | ((
+        input: PipelineSource,
+        opts: TOpts,
+        classif: FileClassification,
+        ctx: PipelineContext,
+      ) => Promise<PipelineResult> | PipelineResult)
+    | undefined;
+  private _preload: ProcessingPlugin<TOpts>["preload"] | undefined;
 
   constructor(config: {
     /** Unique plugin ID (kebab-case recommended). */
@@ -79,10 +81,10 @@ export class Plugin<TOpts = Record<string, unknown>> implements ProcessingPlugin
     this.name = config.name ?? config.id;
     this.options = config.options;
     this.sharedKeys = config.sharedKeys ?? {};
-    this.after = config.after;
-    this.before = config.before;
+    if (config.after !== undefined) this.after = config.after;
+    if (config.before !== undefined) this.before = config.before;
     this._supports = config.supports;
-    this._preload = config.preload;
+    this._preload = config.preload ?? undefined;
 
     if (config.createStages) {
       this._createStages = config.createStages;
@@ -139,12 +141,12 @@ export class Plugin<TOpts = Record<string, unknown>> implements ProcessingPlugin
       name: newName,
       options: merged,
       supports: this._supports,
-      createStages: this._createStages,
-      run: this._runFn,
+      ...(this._createStages !== undefined ? { createStages: this._createStages } : {}),
+      ...(this._runFn !== undefined ? { run: this._runFn } : {}),
       sharedKeys: { ...this.sharedKeys },
-      after: this.after,
-      before: this.before,
-      preload: this._preload,
+      ...(this.after !== undefined ? { after: this.after } : {}),
+      ...(this.before !== undefined ? { before: this.before } : {}),
+      ...(this._preload !== undefined ? { preload: this._preload } : {}),
     });
   }
 

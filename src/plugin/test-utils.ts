@@ -11,7 +11,7 @@ export function mockPipelineSource(overrides?: Partial<PipelineSource>): Pipelin
     file: overrides?.file ?? new File([], "mock.txt"),
     name: overrides?.name ?? "mock.txt",
     type: overrides?.type ?? "text/plain",
-    relativePath: overrides?.relativePath,
+    ...(overrides?.relativePath !== undefined ? { relativePath: overrides.relativePath } : {}),
   };
 }
 
@@ -23,7 +23,7 @@ export function mockPipelineContext(overrides?: Partial<PipelineContext>): Pipel
   return {
     log: overrides?.log ?? (() => {}),
     shared: overrides?.shared ?? new Map(),
-    signal: overrides?.signal,
+    ...(overrides?.signal ? { signal: overrides.signal } : {}),
   };
 }
 
@@ -43,6 +43,6 @@ export function mockFileClassification(
     isSvg: overrides?.isSvg ?? false,
     size: overrides?.size ?? 0,
     lastModified: overrides?.lastModified ?? Date.now(),
-    meta: overrides?.meta,
+    ...(overrides?.meta !== undefined ? { meta: overrides.meta } : {}),
   };
 }

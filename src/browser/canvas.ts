@@ -31,7 +31,7 @@ export function createCanvas(
         | null,
     toBlob: async (type = "image/png", quality?: number) => {
       if (canvas instanceof OffscreenCanvas) {
-        return canvas.convertToBlob({ type, quality });
+        return canvas.convertToBlob({ type, ...(quality !== undefined ? { quality } : {}) });
       }
       return new Promise<Blob | null>((resolve) =>
         (canvas as HTMLCanvasElement).toBlob((b) => resolve(b), type, quality),

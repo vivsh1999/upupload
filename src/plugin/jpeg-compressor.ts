@@ -88,8 +88,8 @@ export const jpegCompressor: Plugin<JpegCompressorPluginOptions> =
       if (!compressed) {
         compressed = await jpegFileFromBlob(sourceFile, `${stemName}.${variantName}.jpg`, {
           quality: q,
-          maxWidthOrHeight: maxWH,
-          maxSizeBytes: pluginOpts.maxSizeMB > 0 ? pluginOpts.maxSizeMB * 1024 * 1024 : undefined,
+          ...(maxWH !== undefined ? { maxWidthOrHeight: maxWH } : {}),
+          ...(pluginOpts.maxSizeMB > 0 ? { maxSizeBytes: pluginOpts.maxSizeMB * 1024 * 1024 } : {}),
         });
       }
 
@@ -111,9 +111,13 @@ export const jpegCompressor: Plugin<JpegCompressorPluginOptions> =
       );
       return {
         artifacts: [
-          artifact(variantName, jpegFile, jpegFile.name, jpegFile.type, {
-            relativePath: input.relativePath,
-          }),
+          artifact(
+            variantName,
+            jpegFile,
+            jpegFile.name,
+            jpegFile.type,
+            input.relativePath !== undefined ? { relativePath: input.relativePath } : {},
+          ),
         ],
         info: [],
         removeFromQueue: false,

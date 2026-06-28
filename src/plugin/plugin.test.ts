@@ -23,7 +23,7 @@ function classif(overrides?: Partial<FileClassification>): FileClassification {
 
 function ctx(): PipelineContext {
   const log = vi.fn();
-  return { log, shared: new Map(), signal: undefined };
+  return { log, shared: new Map() };
 }
 
 // ---------------------------------------------------------------------------

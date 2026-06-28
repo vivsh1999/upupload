@@ -369,8 +369,9 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
     retryMode,
   } = options ?? {};
 
-  const [config, setConfig] = useState<BrowserPipelineOptions>({
-    logLevel: pipelineConfig?.logLevel ?? DEFAULT_BROWSER_PIPELINE_OPTIONS.logLevel,
+  const [config, setConfig] = useState<BrowserPipelineOptions>(() => {
+    const logLevel = pipelineConfig?.logLevel ?? DEFAULT_BROWSER_PIPELINE_OPTIONS.logLevel;
+    return logLevel !== undefined ? { logLevel } : {};
   });
 
   const [queue, setQueue] = useState<FileUploadQueueItem<TMeta>[]>([]);
@@ -520,6 +521,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
       const newItems: FileUploadQueueItem<TMeta>[] = [];
       for (const file of sliced) {
         const id = uid();
+        const meta = getMeta?.(file);
         filesRef.current.set(id, file);
         newItems.push({
           id,
@@ -527,7 +529,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
           file,
           status: "idle",
           progress: 0,
-          meta: getMeta?.(file),
+          ...(meta !== undefined ? { meta: meta as TMeta } : {}),
           needsReselect: false,
         });
       }
@@ -674,10 +676,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
           const pipelineContextMeta = currentGetPipelineContextMeta?.();
 
           result = await runDefaultBrowserPipeline(source, currentConfig, {
-            plugins: currentPlugins,
-            pipeline: currentPipeline,
             signal: controller.signal,
-            pipelineContextMeta,
             onPauseCheck: async () => {
               if (pauseRef.current.paused) {
                 await new Promise<void>((resolve) => {
@@ -705,6 +704,9 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
                 prev.map((q) => (q.id === item.id ? { ...q, progress: pipelineEndProgress } : q)),
               );
             },
+            ...(currentPlugins ? { plugins: currentPlugins } : {}),
+            ...(currentPipeline ? { pipeline: currentPipeline } : {}),
+            ...(pipelineContextMeta ? { pipelineContextMeta } : {}),
           });
 
           if (controller.signal.aborted) return;
@@ -776,6 +778,17 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
               const blob = a.file instanceof Blob ? a.file : new Blob([a.file]);
               if (controller.signal.aborted) return;
               const batchCtx = batchContextRef.current;
+              const batchPreload = batchCtx?.preload;
+              let batchHelper:
+                | { files: FileUploadQueueItem[]; batchId: string; preload?: TPreload }
+                | undefined;
+              if (batchCtx) {
+                batchHelper = {
+                  files: batchCtx.files,
+                  batchId: batchCtx.batchId,
+                  ...(batchPreload !== undefined ? { preload: batchPreload } : {}),
+                };
+              }
               await currentUploadAdapter(
                 {
                   variant: a.variant,
@@ -798,13 +811,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
                   fileId: item.id,
                   totalArtifacts: total,
                   artifactIndex: i,
-                  batch: batchCtx
-                    ? {
-                        files: batchCtx.files,
-                        batchId: batchCtx.batchId,
-                        preload: batchCtx.preload,
-                      }
-                    : undefined,
+                  ...(batchHelper ? { batch: batchHelper } : {}),
                 },
               );
             }
@@ -840,8 +847,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
                   status: "error" as const,
                   error: message,
                   progress: 0,
-                  // Preserve artifacts on error so retryUpload can re-use them
-                  artifacts: q.artifacts ?? undefined,
+                  ...(q.artifacts ? { artifacts: q.artifacts } : {}),
                 }
               : q,
           ),
@@ -896,7 +902,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
       batchContextRef.current = {
         files: pending as FileUploadQueueItem[],
         batchId,
-        preload,
+        ...(preload !== undefined ? { preload } : {}),
       };
 
       try {
@@ -964,11 +970,11 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
     abortControllersRef.current.set(fileId, controller);
 
     setQueue((prev) =>
-      prev.map((q) =>
-        q.id === fileId
-          ? { ...q, status: "uploading" as const, progress: 90, error: undefined }
-          : q,
-      ),
+      prev.map((q) => {
+        if (q.id !== fileId) return q;
+        const { error: _e, ...rest } = q;
+        return { ...rest, status: "uploading" as const, progress: 90 };
+      }),
     );
 
     try {
@@ -1032,8 +1038,9 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
       setQueue((prev) =>
         prev.map((q) => {
           if (q.id !== fileId) return q;
-          if (q.needsReselect) return q; // Can't retry — file blob lost
-          return { ...q, status: "idle" as const, error: undefined, progress: 0 };
+          if (q.needsReselect) return q;
+          const { error: _e, ...rest } = q;
+          return { ...rest, status: "idle" as const, progress: 0 };
         }),
       );
     },

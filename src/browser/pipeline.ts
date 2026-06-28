@@ -216,7 +216,7 @@ export async function runDefaultBrowserPipeline(
     lastModified,
   };
 
-  const ctx: PipelineContext = { log, shared: new Map(), signal };
+  const ctx: PipelineContext = { log, shared: new Map(), ...(signal ? { signal } : {}) };
   if (extra?.pipelineContextMeta) {
     for (const [key, val] of Object.entries(extra.pipelineContextMeta)) {
       ctx.shared.set(key, val);
@@ -281,7 +281,7 @@ export async function runDefaultBrowserPipeline(
                 file: input.file,
                 filename: input.name,
                 filetype: input.type || "application/octet-stream",
-                relativePath: input.relativePath,
+                ...(input.relativePath !== undefined ? { relativePath: input.relativePath } : {}),
               },
             ],
             info: [],
@@ -294,13 +294,13 @@ export async function runDefaultBrowserPipeline(
     ],
   };
 
-  const out = await runPipeline(input, def, {
-    logger: log,
-    signal,
-    onStageProgress: extra?.onStageProgress,
-    onPauseCheck: extra?.onPauseCheck,
-    onProgress: extra?.onProgress,
-  });
+  const runOpts: NonNullable<Parameters<typeof runPipeline>[2]> = { logger: log };
+  if (signal) runOpts.signal = signal;
+  if (extra?.onStageProgress) runOpts.onStageProgress = extra.onStageProgress;
+  if (extra?.onPauseCheck) runOpts.onPauseCheck = extra.onPauseCheck;
+  if (extra?.onProgress) runOpts.onProgress = extra.onProgress;
+
+  const out = await runPipeline(input, def, runOpts);
 
   // Filter out any artifact flagged with `skip: true`
   out.artifacts = out.artifacts.filter((a) => !a.skip);

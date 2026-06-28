@@ -18,17 +18,17 @@ export function artifact(
     filename,
     filetype:
       filetype ?? (file instanceof Blob && file.type ? file.type : "application/octet-stream"),
-    relativePath: extra?.relativePath,
-    skip: extra?.skip,
+    ...(extra?.relativePath !== undefined ? { relativePath: extra.relativePath } : {}),
+    ...(extra?.skip !== undefined ? { skip: extra.skip } : {}),
   };
 }
 
 export function warning(message: string, code?: string): PipelineInfoMessage {
-  return { level: "warn", message, code };
+  return { level: "warn", message, ...(code !== undefined ? { code } : {}) };
 }
 
 export function infoMessage(message: string, code?: string): PipelineInfoMessage {
-  return { level: "info", message, code };
+  return { level: "info", message, ...(code !== undefined ? { code } : {}) };
 }
 
 /**

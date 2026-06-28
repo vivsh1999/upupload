@@ -166,7 +166,7 @@ export async function runPipeline(
   const ctx: PipelineContext = options?.ctx ?? {
     log,
     shared: new Map<string, unknown>(),
-    signal: options?.signal,
+    ...(options?.signal ? { signal: options.signal } : {}),
   };
 
   const total = def.stages.length;

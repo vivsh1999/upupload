@@ -35,7 +35,7 @@ export function compose(
     }
   }
 
-  return { stages, middleware: middleware.length > 0 ? middleware : undefined };
+  return { stages, ...(middleware.length > 0 ? { middleware } : {}) };
 }
 
 /**
@@ -176,7 +176,7 @@ export async function runPipelineFrom(
   const ctx: PipelineContext = {
     log,
     shared: new Map<string, unknown>(),
-    signal: options?.signal,
+    ...(options?.signal ? { signal: options.signal } : {}),
   };
 
   const nodes = factory(ctx, source);

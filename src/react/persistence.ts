@@ -57,14 +57,16 @@ export function serializeForStorage<TMeta>(
     name: item.name,
     status: item.status,
     progress: item.progress,
-    error: item.error,
+    ...(item.error !== undefined ? { error: item.error } : {}),
     meta: item.meta as unknown,
     fileName: item.file?.name ?? item.name,
     fileSize: item.file?.size ?? 0,
     fileType: item.file?.type ?? "",
     fileLastModified: item.file?.lastModified ?? 0,
-    artifacts: item.artifacts?.map((a) => ({ variant: a.variant, filename: a.filename })),
-    needsReselect: item.needsReselect,
+    ...(item.artifacts?.length
+      ? { artifacts: item.artifacts.map((a) => ({ variant: a.variant, filename: a.filename })) }
+      : {}),
+    ...(item.needsReselect !== undefined ? { needsReselect: item.needsReselect } : {}),
   }));
 }
 
