@@ -59,19 +59,19 @@ npm add heic-decode heic2any utif
 
 ## Entry Points
 
-| Path                                          | Environment | Contents                                          | Bundle cost |
-| --------------------------------------------- | ----------- | ------------------------------------------------- | ----------- |
-| `@vivsh1999/upupload`                         | Browser     | Re-exports core + browser                         | —           |
-| `@vivsh1999/upupload/browser`                 | Browser     | Pipeline, allowlist, audio/canvas utils, plugins  | 8 kB        |
-| `@vivsh1999/upupload/core`                    | Universal   | Generic pipeline engine, types, result helpers    | 1 kB        |
-| `@vivsh1999/upupload/react`                   | Browser     | `useFileUpload` React hook                        | 60 kB       |
-| `@vivsh1999/upupload/server`                  | Node        | Server entry (minimal)                            | < 1 kB      |
-| `@vivsh1999/upupload/plugins`                 | Browser     | Barrel re-export of all plugins                   | N/A         |
-| `@vivsh1999/upupload/plugins/jpeg-compressor` | Browser     | JPEG/PNG/WebP compressor plugin                   | +4 kB       |
-| `@vivsh1999/upupload/plugins/raw-to-jpeg`     | Browser     | RAW/HEIC/TIFF decoder plugin                      | +12 kB      |
-| `@vivsh1999/upupload/plugins/video-poster`    | Browser     | Video poster frame plugin                         | +6 kB       |
-| `@vivsh1999/upupload/plugins/testing`         | Browser     | Plugin test utilities                             | +1 kB       |
-| `@vivsh1999/upupload/preset`                  | Browser     | Zero-config `upload()` with auto-detected plugins | +13 kB      |
+| Path                                          | Environment | Contents                                                 | Bundle cost |
+| --------------------------------------------- | ----------- | -------------------------------------------------------- | ----------- |
+| `@vivsh1999/upupload`                         | Browser     | Re-exports core (pipeline engine, types, result helpers) | —           |
+| `@vivsh1999/upupload/browser`                 | Browser     | Pipeline, allowlist, audio/canvas utils, plugins         | 8 kB        |
+| `@vivsh1999/upupload/core`                    | Universal   | Generic pipeline engine, types, result helpers           | 1 kB        |
+| `@vivsh1999/upupload/react`                   | Browser     | `useFileUpload` React hook                               | 60 kB       |
+| `@vivsh1999/upupload/server`                  | Node        | Server entry (minimal)                                   | < 1 kB      |
+| `@vivsh1999/upupload/plugins`                 | Browser     | Barrel re-export of all plugins                          | N/A         |
+| `@vivsh1999/upupload/plugins/jpeg-compressor` | Browser     | JPEG/PNG/WebP compressor plugin                          | +4 kB       |
+| `@vivsh1999/upupload/plugins/raw-to-jpeg`     | Browser     | RAW/HEIC/TIFF decoder plugin                             | +12 kB      |
+| `@vivsh1999/upupload/plugins/video-poster`    | Browser     | Video poster frame plugin                                | +6 kB       |
+| `@vivsh1999/upupload/plugins/testing`         | Browser     | Plugin test utilities                                    | +1 kB       |
+| `@vivsh1999/upupload/preset`                  | Browser     | Zero-config `upload()` with auto-detected plugins        | +13 kB      |
 
 Only the specific plugin path you import is added to your bundle.
 
@@ -86,18 +86,39 @@ import { useFileUpload } from "@vivsh1999/upupload/react";
 import { jpegCompressor } from "@vivsh1999/upupload/plugins";
 
 function Uploader() {
-  const { getDropTargetProps, getFileInputProps, queue, startUpload } = useFileUpload({
+  const {
+    getDropTargetProps,
+    getFileInputProps,
+    queue,
+    startUpload,
+    cancelUpload,
+    isDragOver,
+    isBusy,
+  } = useFileUpload({
     plugins: [jpegCompressor.with({ quality: 80, maxSizeMB: 1 })],
+    uploadAdapter: async (artifact, { onProgress, fileId, totalArtifacts, artifactIndex }) => {
+      for (let pct = 0; pct <= 100; pct += 10) {
+        await new Promise((r) => setTimeout(r, 10));
+        onProgress(pct);
+      }
+      await fetch("/api/upload", { method: "POST", body: artifact.blob });
+    },
   });
   return (
-    <div {...getDropTargetProps()}>
+    <div {...getDropTargetProps()} style={{ border: isDragOver ? "2px dashed blue" : "" }}>
       <input {...getFileInputProps()} />
       {queue.map((item) => (
         <div key={item.id}>
+          {!item.needsReselect && <img src={item.previewUrl} alt="" width={40} />}
           {item.name} — {item.status} ({item.progress}%)
+          {item.status === "error" && !item.needsReselect && (
+            <button onClick={() => cancelUpload(item.id)}>Cancel</button>
+          )}
         </div>
       ))}
-      <button onClick={() => startUpload()}>Upload</button>
+      <button onClick={() => startUpload()} disabled={isBusy}>
+        Upload
+      </button>
     </div>
   );
 }
@@ -145,11 +166,76 @@ import { upload } from "@vivsh1999/upupload/preset";
 const result = await upload(file, { quality: 80 });
 ```
 
-### Handling Results (uploading artifacts)
+### React Hook Options
 
-After processing, iterate over `result.artifacts` and upload each one:
+The hook accepts a `UseFileUploadOptions<TMeta, TPreload>` object. Key options:
+
+| Option                             | Description                                                               |
+| ---------------------------------- | ------------------------------------------------------------------------- |
+| `plugins`                          | Processing plugins to apply                                               |
+| `pipeline`                         | `PipelineDef[]` for per-type routing                                      |
+| `pipelineConfig`                   | Pass `{ logLevel: "debug" }` for verbose console output                   |
+| `uploadAdapter`                    | Function that receives each artifact and its helpers                      |
+| `tuning.maxConcurrency`            | Pipeline parallelism (default: CPU count, capped at 4)                    |
+| `tuning.maxUploadConcurrency`      | Upload adapter parallelism (defaults to `maxConcurrency`)                 |
+| `maxQueuedUploads`                 | Backpressure limit for `"uploading"` state                                |
+| `maxFileSize`                      | Reject files over N bytes                                                 |
+| `maxTotalBatchSize`                | Reject if total batch exceeds N bytes                                     |
+| `maxNumberOfFiles`                 | Cap on total queue items                                                  |
+| `persistence`                      | `"memory"` or `"indexeddb"` (survives page reload)                        |
+| `storageKeyPrefix`                 | Isolate IndexedDB database name                                           |
+| `retryMode`                        | `"pipeline"` (default) or `"adapter-only"` (skip re-compression on retry) |
+| `autoPreventTabClose`              | Prevent tab close during processing                                       |
+| `autoPauseOnOffline`               | Auto-pause on network disconnect                                          |
+| `autoWakeLock`                     | Prevent screen sleep during upload                                        |
+| `getMeta`                          | Attach custom metadata (`TMeta`) to each queue item                       |
+| `getPipelineContextMeta`           | Inject values into every file's pipeline shared context                   |
+| `onBeforeStart`                    | Batch pre-processing hook, returns `TPreload` for adapter                 |
+| `onFileProcessed`                  | Fires after pipeline, before upload                                       |
+| `onFileComplete`                   | Fires after pipeline + upload complete                                    |
+| `onBatchComplete`                  | Cumulated stats when batch finishes                                       |
+| `onBatchProgress`                  | Live progress during batch processing/uploads                             |
+| `onInfo` / `onWarning` / `onError` | Structured logging and error callbacks                                    |
+
+Queue items are a **discriminated union** — when restored from IndexedDB after page reload, `needsReselect: true` and `file` is unavailable. Check `item.needsReselect` before accessing `item.file`.
+
+Full reference: [docs/react.md](docs/react.md)
+
+### uploadAdapter
+
+The `uploadAdapter` replaces manual `onFileComplete` iteration and provides helper fields:
+
+```tsx
+useFileUpload<{ sessionId: string }, { token: string }>({
+  plugins: [jpegCompressor.with({ quality: 80 })],
+  onBeforeStart: async (files) => {
+    const res = await fetch("/api/bulk-init", { method: "POST" });
+    return { token: await res.text() };
+  },
+  uploadAdapter: async (
+    artifact,
+    { onProgress, signal, fileId, totalArtifacts, artifactIndex, batch },
+  ) => {
+    // artifact: { variant, blob, filename, filetype }
+    // onProgress(0-100) — updates the queue item's progress
+    // signal — honour cancellation
+    // fileId, totalArtifacts, artifactIndex — per-file context
+    // batch.files, batch.batchId, batch.preload.token — batch context
+    for (let pct = 0; pct <= 100; pct += 10) {
+      await new Promise((r) => setTimeout(r, 10));
+      if (signal?.aborted) return;
+      onProgress(pct);
+    }
+    await fetch("/api/upload", { method: "POST", body: artifact.blob });
+  },
+});
+```
+
+For custom upload without the hook, use the core result helpers:
 
 ```ts
+import { upload } from "@vivsh1999/upupload/preset";
+const result = await upload(file, { quality: 80 });
 for (const artifact of result.artifacts) {
   await fetch("/api/upload", {
     method: "POST",
@@ -157,19 +243,6 @@ for (const artifact of result.artifacts) {
     headers: { "Content-Type": artifact.filetype },
   });
 }
-```
-
-With the React hook, use the `onFileComplete` callback:
-
-```tsx
-useFileUpload({
-  plugins: [jpegCompressor.with({ quality: 80 })],
-  onFileComplete: async (item) => {
-    for (const a of item.artifacts ?? []) {
-      await fetch("/api/upload", { method: "POST", body: a.blob });
-    }
-  },
-});
 ```
 
 ---
@@ -184,7 +257,9 @@ Input → queue (idle)
          ▼
 ┌──────────────────────────────────────────┐
 │ 1. Pipeline Processing (maxConcurrency)  │  ← compression, transcoding
-│    • Each file acquires a semaphore slot │     (0 – 90% progress)
+│    • Each file acquires a semaphore slot │     (0 – pipelineEndProgress%)
+│    • Progress derived from completed     │
+│    • stages / total stages × 90          │
 │    • Multiple files processed in parallel│
 │    • Plugins run sequentially per file   │
 └──────────────────────────────────────────┘
@@ -192,7 +267,7 @@ Input → queue (idle)
          ▼
 ┌──────────────────────────────────────────┐
 │ 2. Upload Adapter (per file, sequential) │  ← your adapter sends artifacts
-│    • Called once per artifact            │     (90 – 100% progress)
+│    • Called once per artifact            │     (pipelineEndProgress – 99%)
 │    • All artifacts of a file are sent    │
 │      sequentially (one at a time)        │
 │    • Adapter receives batch context      │
@@ -229,6 +304,12 @@ artifacts from the original processing are re-used. This means:
   Call `retry(fileId)` instead to reset the file to `"idle"` and re-process
   it through the full pipeline.
 
+### retryMode
+
+Set `retryMode: "adapter-only"` on the hook so `retry(fileId)` skips
+re-compression and re-runs only the upload adapter when artifacts exist.
+Falls back to full re-processing if no artifacts are available.
+
 ---
 
 ## Custom Plugins
@@ -250,7 +331,9 @@ const watermark = new Plugin<{ opacity: number }>({
     // opts.opacity is typed as number
     // classif.stemName, classif.ext — file metadata
     // ctx.shared — inter-plugin communication
-    // ctx.log — structured logging
+    // ctx.log(level, message, extra?) — structured logging
+    // ctx.signal?: AbortSignal — cancellation support
+    // ctx.reportProgress(percent) — surface progress during long ops
     return artifact("watermarked", input.file, classif.stemName + ".jpg", "image/jpeg");
   },
 });
