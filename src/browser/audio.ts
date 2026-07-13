@@ -28,12 +28,36 @@ export function audioBufferToWav(buffer: AudioBuffer): Blob {
   view.setUint32(40, dataSize, true);
 
   let offset = 44;
-  for (let ch = 0; ch < numChannels; ch++) {
-    const data = buffer.getChannelData(ch);
+  if (numChannels === 1) {
+    const data = buffer.getChannelData(0);
+    const len = data.length;
+    for (let i = 0; i < len; i++) {
+      const s = Math.max(-1, Math.min(1, data[i]!));
+      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      offset += 2;
+    }
+  } else if (numChannels === 2) {
+    const data0 = buffer.getChannelData(0);
+    const data1 = buffer.getChannelData(1);
+    const len = data0.length;
+    for (let i = 0; i < len; i++) {
+      const s0 = Math.max(-1, Math.min(1, data0[i]!));
+      view.setInt16(offset, s0 < 0 ? s0 * 0x8000 : s0 * 0x7fff, true);
+      const s1 = Math.max(-1, Math.min(1, data1[i]!));
+      view.setInt16(offset + 2, s1 < 0 ? s1 * 0x8000 : s1 * 0x7fff, true);
+      offset += 4;
+    }
+  } else {
+    const channelData: Float32Array[] = [];
+    for (let ch = 0; ch < numChannels; ch++) {
+      channelData.push(buffer.getChannelData(ch));
+    }
     for (let i = 0; i < length; i++) {
-      const s = Math.max(-1, Math.min(1, data[i]));
-      view.setInt16(offset + ch * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-      if (ch === numChannels - 1) offset += blockAlign;
+      for (let ch = 0; ch < numChannels; ch++) {
+        const s = Math.max(-1, Math.min(1, channelData[ch]![i]!));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+        offset += 2;
+      }
     }
   }
   return new Blob([buf], { type: "audio/wav" });

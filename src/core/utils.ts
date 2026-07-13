@@ -24,12 +24,16 @@ export function compose(
   const stages: PipelineStage<PipelineSource, PipelineResult>[] = [];
   const middleware: StageMiddleware[] = [];
 
-  for (const def of defs) {
-    for (let i = 0; i < def.stages.length; i++) {
+  const defsLen = defs.length;
+  for (let d = 0; d < defsLen; d++) {
+    const def = defs[d]!;
+    const stagesLen = def.stages.length;
+    for (let i = 0; i < stagesLen; i++) {
       stages.push(def.stages[i]!);
     }
     if (def.middleware) {
-      for (let i = 0; i < def.middleware.length; i++) {
+      const mwLen = def.middleware.length;
+      for (let i = 0; i < mwLen; i++) {
         middleware.push(def.middleware[i]!);
       }
     }
@@ -94,12 +98,17 @@ export function createTimingMiddleware(
     return {
       ...stage,
       run: async (input, ctx) => {
+        if (!onTiming && (!ctx.log || ctx.log === NOOP_LOGGER)) {
+          return originalRun(input, ctx);
+        }
         const start = performance.now();
         try {
           return await originalRun(input, ctx);
         } finally {
           const elapsed = performance.now() - start;
-          ctx.log("debug", `Stage "${stage.id}" took ${elapsed.toFixed(1)}ms`);
+          if (ctx.log && ctx.log !== NOOP_LOGGER) {
+            ctx.log("debug", `Stage "${stage.id}" took ${elapsed.toFixed(1)}ms`);
+          }
           onTiming?.(stage.id, elapsed);
         }
       },
@@ -123,12 +132,14 @@ export function flattenPipeline(
   nodes: PipelineNode[],
   ctx: PipelineContext,
   source: PipelineSource,
+  stages: PipelineStage<PipelineSource, PipelineResult>[] = [],
 ): PipelineStage<PipelineSource, PipelineResult>[] {
-  const stages: PipelineStage<PipelineSource, PipelineResult>[] = [];
-  for (const node of nodes) {
+  const len = nodes.length;
+  for (let i = 0; i < len; i++) {
+    const node = nodes[i]!;
     if (isPipelineNode(node)) {
       const inner = node(ctx, source);
-      stages.push(...flattenPipeline(inner, ctx, source));
+      flattenPipeline(inner, ctx, source, stages);
     } else {
       stages.push(node);
     }

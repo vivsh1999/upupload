@@ -65,5 +65,15 @@ export const VECTOR_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([".svg"]);
 /** Extract the lowercase file extension from a filename. */
 export function fileExtensionLower(name: string): string {
   const i = name.lastIndexOf(".");
-  return i >= 0 ? name.slice(i).toLowerCase() : "";
+  if (i < 0) return "";
+  const ext = name.slice(i);
+  const extLen = ext.length;
+  for (let j = 0; j < extLen; j++) {
+    const c = ext.charCodeAt(j);
+    if (c >= 65 && c <= 90) {
+      // 'A' - 'Z'
+      return ext.toLowerCase();
+    }
+  }
+  return ext;
 }

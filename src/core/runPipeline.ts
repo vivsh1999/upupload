@@ -66,10 +66,10 @@ async function executeStage<I extends PipelineSource, O extends PipelineResult>(
   startIndex: number,
   totalStages: number,
   options: PipelineOptions | undefined,
-  current?: PipelineResult,
+  current: PipelineResult,
 ): Promise<{ result: O; skipped: boolean }> {
   const guard = stage.when ?? ALWAYS_RUN;
-  const decision = await guard(source, ctx, (current ?? initialResult()) as O);
+  const decision = await guard(source, ctx, current as O);
   if (!decision.run) {
     if (decision.reason) {
       log("debug", `Stage "${stage.id}" skipped: ${decision.reason}`, decision.code);
@@ -174,13 +174,17 @@ export async function runPipeline(
 
   // Validate dependencies (lazy — only build Set when a stage declares dependsOn)
   let stageIds: Set<string> | undefined;
-  for (const stage of stages) {
+  const stagesLen = stages.length;
+  for (let idx = 0; idx < stagesLen; idx++) {
+    const stage = stages[idx]!;
     if (stage.dependsOn) {
       if (!stageIds) {
         stageIds = new Set<string>();
-        for (const s of stages) stageIds.add(s.id);
+        for (let j = 0; j < stagesLen; j++) stageIds.add(stages[j]!.id);
       }
-      for (const depId of stage.dependsOn) {
+      const depLen = stage.dependsOn.length;
+      for (let j = 0; j < depLen; j++) {
+        const depId = stage.dependsOn[j]!;
         if (!stageIds.has(depId)) {
           throw new Error(
             `Stage "${stage.id}" depends on "${depId}" which does not exist in the pipeline`,

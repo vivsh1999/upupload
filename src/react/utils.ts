@@ -1,8 +1,11 @@
 export class Semaphore {
-  private running = 0;
-  private queue: Array<{ resolve: () => void; reject: (err: Error) => void }> = [];
+  private running: number;
+  private queue: Array<{ resolve: () => void; reject: (err: Error) => void }>;
 
-  constructor(public readonly max: number) {}
+  constructor(public readonly max: number) {
+    this.running = 0;
+    this.queue = [];
+  }
 
   async acquire(signal?: AbortSignal): Promise<void> {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -11,7 +14,17 @@ export class Semaphore {
       return;
     }
     return new Promise<void>((resolve, reject) => {
-      if (signal?.aborted) {
+      if (!signal) {
+        this.queue.push({
+          resolve: () => {
+            this.running++;
+            resolve();
+          },
+          reject,
+        });
+        return;
+      }
+      if (signal.aborted) {
         reject(new DOMException("Aborted", "AbortError"));
         return;
       }
@@ -20,10 +33,10 @@ export class Semaphore {
         if (idx !== -1) this.queue.splice(idx, 1);
         reject(new DOMException("Aborted", "AbortError"));
       };
-      signal?.addEventListener("abort", onAbort, { once: true });
+      signal.addEventListener("abort", onAbort, { once: true });
       this.queue.push({
         resolve: () => {
-          signal?.removeEventListener("abort", onAbort);
+          signal.removeEventListener("abort", onAbort);
           this.running++;
           resolve();
         },
@@ -34,8 +47,9 @@ export class Semaphore {
 
   release(): void {
     this.running--;
-    const next = this.queue.shift();
-    if (next) next.resolve();
+    if (this.queue.length > 0) {
+      this.queue.shift()!.resolve();
+    }
   }
 
   async run<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {

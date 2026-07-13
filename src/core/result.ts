@@ -12,23 +12,26 @@ export function artifact(
   filetype?: string,
   extra?: { relativePath?: string; skip?: boolean },
 ): PipelineArtifact {
-  return {
+  const art: PipelineArtifact = {
     variant,
     file,
     filename,
     filetype:
       filetype ?? (file instanceof Blob && file.type ? file.type : "application/octet-stream"),
-    ...(extra?.relativePath !== undefined ? { relativePath: extra.relativePath } : {}),
-    ...(extra?.skip !== undefined ? { skip: extra.skip } : {}),
   };
+  if (extra) {
+    if (extra.relativePath !== undefined) art.relativePath = extra.relativePath;
+    if (extra.skip !== undefined) art.skip = extra.skip;
+  }
+  return art;
 }
 
 export function warning(message: string, code?: string): PipelineInfoMessage {
-  return { level: "warn", message, ...(code !== undefined ? { code } : {}) };
+  return code !== undefined ? { level: "warn", message, code } : { level: "warn", message };
 }
 
 export function infoMessage(message: string, code?: string): PipelineInfoMessage {
-  return { level: "info", message, ...(code !== undefined ? { code } : {}) };
+  return code !== undefined ? { level: "info", message, code } : { level: "info", message };
 }
 
 /**

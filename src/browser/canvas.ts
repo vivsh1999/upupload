@@ -30,7 +30,7 @@ export function createCanvas(
         | OffscreenCanvasRenderingContext2D
         | null,
     toBlob: async (type = "image/png", quality?: number) => {
-      if (canvas instanceof OffscreenCanvas) {
+      if (typeof OffscreenCanvas !== "undefined" && canvas instanceof OffscreenCanvas) {
         return canvas.convertToBlob({ type, ...(quality !== undefined ? { quality } : {}) });
       }
       return new Promise<Blob | null>((resolve) =>

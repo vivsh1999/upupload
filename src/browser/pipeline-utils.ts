@@ -172,10 +172,6 @@ export interface PipelineDef {
   pipelines?: PipelineDef[];
 }
 
-function isPluginInstance(p: PipelinePlugin): p is ProcessingPlugin<any> {
-  return typeof (p as ProcessingPlugin<any>).supports === "function";
-}
-
 /**
  * Resolve an array of {@link PipelinePlugin} entries against a plugin
  * registry. Plugin references (`{ id, opts }`) are resolved to concrete
@@ -191,24 +187,26 @@ export function resolvePluginRefs(
   const result = new Array<ProcessingPlugin<any>>(count);
   for (let i = 0; i < count; i++) {
     const p = plugins[i]!;
-    if (isPluginInstance(p)) {
-      result[i] = p;
+    if (typeof (p as any).supports === "function") {
+      result[i] = p as ProcessingPlugin<any>;
       continue;
     }
 
-    const plugin = p.defaults ?? registry?.find((r) => r.id === p.id);
+    const ref = p as PluginRef;
+    const plugin = ref.defaults ?? registry?.find((r) => r.id === ref.id);
     if (!plugin) {
       throw new Error(
-        `Plugin "${p.id}" referenced in pipeline but not found in the plugin registry. ` +
+        `Plugin "${ref.id}" referenced in pipeline but not found in the plugin registry. ` +
           "Make sure to pass it via the `plugins` option.",
       );
     }
-    if (!p.opts) {
+    const opts = ref.opts;
+    if (!opts) {
       result[i] = plugin;
       continue;
     }
     let hasOpts = false;
-    for (const _k in p.opts) {
+    for (const _k in opts) {
       hasOpts = true;
       break;
     }
@@ -217,10 +215,10 @@ export function resolvePluginRefs(
       continue;
     }
     if (plugin instanceof Plugin) {
-      result[i] = plugin.with(p.opts as any);
+      result[i] = plugin.with(opts as any);
       continue;
     }
-    result[i] = { ...plugin, options: { ...plugin.options, ...p.opts } };
+    result[i] = { ...plugin, options: { ...plugin.options, ...opts } };
   }
   return result;
 }
@@ -287,18 +285,20 @@ export interface ValidationError {
 }
 
 function collectPipelineIds(defs: PipelineDef[], path: string[], ids: Map<string, string[]>): void {
-  for (const def of defs) {
+  const len = defs.length;
+  for (let i = 0; i < len; i++) {
+    const def = defs[i]!;
     path.push(def.id);
-    const fullPath = [...path];
     const existing = ids.get(def.id);
     if (existing) {
+      const fullPath = [...path];
       path.pop();
       throw new Error(
         `Duplicate pipeline id "${def.id}" at [${fullPath.join(", ")}] ` +
           `— first defined at [${existing.join(", ")}]`,
       );
     }
-    ids.set(def.id, fullPath);
+    ids.set(def.id, [...path]);
     if (def.pipelines) {
       collectPipelineIds(def.pipelines, path, ids);
     }
@@ -320,7 +320,9 @@ export function validatePipeline(defs: PipelineDef[]): void {
   collectPipelineIds(defs, [], ids);
 
   function walk(defs: PipelineDef[], path: string[]): void {
-    for (const def of defs) {
+    const len = defs.length;
+    for (let i = 0; i < len; i++) {
+      const def = defs[i]!;
       path.push(def.id);
       const hasPlugins = def.plugins !== undefined && def.plugins.length > 0;
       const hasChildren = def.pipelines !== undefined && def.pipelines.length > 0;
@@ -335,14 +337,15 @@ export function validatePipeline(defs: PipelineDef[]): void {
       }
 
       if (def.plugins) {
-        for (let i = 0; i < def.plugins.length; i++) {
-          const p = def.plugins[i]!;
+        const pLen = def.plugins.length;
+        for (let j = 0; j < pLen; j++) {
+          const p = def.plugins[j]!;
           if (!p) {
             const errorPath = path.join(", ");
             path.pop();
             throw new Error(
               `Pipeline "${def.id}" at [${errorPath}] has a null/undefined ` +
-                `plugin at index ${i}.`,
+                `plugin at index ${j}.`,
             );
           }
         }
