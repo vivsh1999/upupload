@@ -41,15 +41,27 @@ jobs:
       - name: Install dependencies
         run: vp install
 
-      - name: Run baseline benchmarks
+      - name: Resolve baseline tag
+        id: resolve-tag
         run: |
           CURRENT_VERSION="v$(jq -r .version package.json)"
           PREV_TAG=$(git tag --sort=-v:refname | grep -v "$CURRENT_VERSION" | head -n 1)
           if [ -z "$PREV_TAG" ]; then
             PREV_TAG="v0.6.1"
           fi
-          echo "Dynamically resolved baseline tag: $PREV_TAG"
-          git checkout $PREV_TAG
+          echo "PREV_TAG=$PREV_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Cache baseline benchmarks
+        id: cache-baseline
+        uses: actions/cache@v4
+        with:
+          path: bench_baseline.txt
+          key: benchmarks-baseline-${{ steps.resolve-tag.outputs.PREV_TAG }}
+
+      - name: Run baseline benchmarks
+        if: steps.cache-baseline.outputs.cache-hit != 'true'
+        run: |
+          git checkout ${{ steps.resolve-tag.outputs.PREV_TAG }}
           vp install
           npx vitest bench > bench_baseline.txt
           git checkout -
@@ -63,7 +75,7 @@ jobs:
         run: node scripts/update-benchmarks.mjs
 
       - name: Clean up temporary benchmark logs
-        run: rm -f bench_baseline.txt bench_main.txt
+        run: rm -f bench_main.txt
 
       - name: Commit updated README
         run: |
