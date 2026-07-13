@@ -57,7 +57,10 @@ const GROUPS = [
 let output;
 if (existsSync("bench_main.txt")) {
   console.log("Found bench_main.txt — using same-environment results.");
-  output = readFileSync("bench_main.txt", "utf-8");
+  output = readFileSync("bench_main.txt", "utf-8").replace(
+    /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g,
+    "",
+  );
 } else {
   try {
     output = execSync("npx vitest bench", { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
@@ -101,7 +104,10 @@ try {
 if (existsSync("bench_baseline.txt")) {
   console.log("Found bench_baseline.txt — using same-environment baseline.");
   try {
-    const content = readFileSync("bench_baseline.txt", "utf-8");
+    const content = readFileSync("bench_baseline.txt", "utf-8").replace(
+      /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g,
+      "",
+    );
     let currentDescribe = "";
     for (const line of content.split("\n")) {
       const describeMatch = line.match(/^\s*[✓↓]\s+.*?>\s+(.+?)\s+\d+ms\s*$/);
