@@ -1,5 +1,65 @@
 # Changelog
 
+## [0.7.0] — 2026-07-14
+
+### Added
+
+#### Web Worker Background Processing
+
+- Added `useWorker` to `BrowserPipelineOptions` and `DEFAULT_BROWSER_PIPELINE_OPTIONS` to run image compression in a background thread via `OffscreenCanvas` and `createImageBitmap`.
+- Optimized quality-to-size iterations inside the Web Worker using a mathematically optimal logarithmic binary search (bisection) capped at 6 iterations.
+- Bypassed ESM loader runtime delays with zero-overhead static imports.
+
+#### Pluggable zero-dependency Upload Adapters
+
+- Added the `@vivsh1999/upupload/adapters` export path for ready-to-use, tree-shakable adapters.
+- `fetchUploadAdapter` — provides multipart/form-data and binary body POST/PUT uploading with accurate `XMLHttpRequest` progress reporting.
+- `s3UploadAdapter` — handles direct-to-bucket uploads using PUT presigned URLs for Amazon S3 and Cloudflare R2.
+
+#### Progressive Heap Memory Pruning
+
+- Added `pruneUploadedArtifacts?: boolean` option to `UseFileUploadOptions` (defaults to `true`).
+- Automatically revokes associated preview object URLs and truncates heavy binary Blob chunks inside queue states immediately upon successful upload to maintain a constant client-side RAM footprint during large batches.
+
+#### Throttled React Rendering
+
+- Throttled UI queue progress and global batch progress updates to once every `100ms` or if progress jumps by `> 1.0%`, keeping React rendering buttery smooth under intense network loads.
+
+#### Vitest Browser Mode Setup
+
+- Integrated Playwright browser-mode configuration into `vitest.config.ts` for automated multi-browser integration checks on genuine image processing features across Chromium, WebKit, and Firefox.
+
+## [0.6.0] — 2026-06-20
+
+### Added
+
+#### Granular Log Level System
+
+- Replaced the simple `debug?: boolean` with a granular `logLevel: "silent" | "error" | "warn" | "info" | "debug"` configuration in `BrowserPipelineOptions` for precise console tracing control.
+
+#### Eager Processing Semaphore Release
+
+- Optimistically releases the pipeline execution concurrency semaphore _before_ launching the upload adapter phase in `useFileUpload`. This frees up local GPU/CPU compression slots for pending items much earlier in the batch lifecycle.
+
+#### Adaptive Upload Progress Floor
+
+- Replaced the hardcoded 90% upload progress floor with a dynamic, adaptive floor calculated directly from the pipeline's exact end progress percentage.
+
+### Fixed
+
+#### Audit Findings Resolutions
+
+- Resolved 10 security and logical edge-case findings, including:
+  - Fixed a deadlock condition when pausing/resuming queues under heavy concurrency.
+  - Eliminated potential memory leaks in pipeline cancellation and error cleanup paths.
+  - Improved progress calculation accuracy when processing multi-artifact pipelines.
+  - Guarded `serializeForStorage` against `undefined` files for `needsReselect` queue items.
+
+#### Strict Compiler & Registry Compatibility
+
+- Enabled `exactOptionalPropertyTypes` inside `tsconfig.json` for seamless compatibility with strict frameworks (e.g. Effect).
+- Added explicit type annotations to `FileStatus` and core exports to completely satisfy JSR "slow types" rules and ensure maximum compiling speed.
+
 ## [0.5.0] — 2026-05-16
 
 ### Added

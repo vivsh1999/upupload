@@ -6,6 +6,7 @@ import type { MaxLongEdgePreset, MediaUploadFieldProps } from "./types";
 import { useMediaUpload } from "./useMediaUpload";
 import { rawToJpeg, jpegCompressor, videoPoster } from "@vivsh1999/upupload/plugins";
 import type { ProcessingPlugin } from "@vivsh1999/upupload/react";
+import { fetchUploadAdapter } from "@vivsh1999/upupload/adapters";
 
 export function MediaUploadField(props: MediaUploadFieldProps) {
   const {
@@ -38,6 +39,7 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
   const [thumbnailEnabled, setThumbnailEnabled] = useState(true);
   const [qualityPercent, setQualityPercent] = useState(90);
   const [maxLongEdge, setMaxLongEdge] = useState<MaxLongEdgePreset>(3840);
+  const [useWorker, setUseWorker] = useState(true);
 
   const plugins = useMemo<ProcessingPlugin<any>[]>(() => {
     const result: ProcessingPlugin<any>[] = [];
@@ -71,7 +73,18 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
 
   const media = useMediaUpload({
     plugins,
-    pipelineConfig,
+    pipelineConfig: {
+      ...pipelineConfig,
+      useWorker,
+    },
+    uploadAdapter: fetchUploadAdapter({
+      url: "/api/upload",
+      method: "POST",
+      bodyFormat: "form-data",
+      extraFields: (art) => ({
+        variant: art.variant,
+      }),
+    }),
     maxNumberOfFiles,
     tuning,
     onInfo: (message) => {
@@ -91,7 +104,7 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
     },
     onFileComplete: (item) => {
       onFileComplete?.(item);
-      toast.success(`Processed: ${item.name}`);
+      toast.success(`Processed & Uploaded: ${item.name}`);
     },
   });
 
@@ -108,6 +121,8 @@ export function MediaUploadField(props: MediaUploadFieldProps) {
         thumbnailEnabled={thumbnailEnabled}
         onOptimizedEnabledChange={setOptimizedEnabled}
         onThumbnailEnabledChange={setThumbnailEnabled}
+        useWorker={useWorker}
+        onUseWorkerChange={setUseWorker}
         qualityPercent={qualityPercent}
         onQualityPercentChange={setQualityPercent}
         maxLongEdge={maxLongEdge}

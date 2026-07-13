@@ -98,6 +98,13 @@ export function MediaUploadShadcnControls(props: MediaUploadSkeletonProps) {
               onCheckedChange={props.onThumbnailEnabledChange}
               disabled={props.disabled}
             />
+            <ToggleRow
+              title="Background worker processing"
+              description="Offload image compression to an inlined background Web Worker to keep the main thread responsive."
+              checked={props.useWorker}
+              onCheckedChange={props.onUseWorkerChange}
+              disabled={props.disabled}
+            />
           </div>
         </section>
 

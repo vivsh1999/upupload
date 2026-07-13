@@ -4,11 +4,14 @@
 
 ```ts
 type BrowserPipelineOptions = {
-  debug?: boolean; // Enable debug logging to console
+  /** Log verbosity level ("silent" | "error" | "warn" | "info" | "debug") */
+  logLevel?: "silent" | "error" | "warn" | "info" | "debug";
+  /** Offload image processing (resizing, JPEG compression) to a background Web Worker */
+  useWorker?: boolean;
 };
 ```
 
-The only pipeline-level option is `debug`. All processing tuning (quality, resolution, size) is configured per-plugin via each plugin's typed options.
+The pipeline-level options configure global logging (`logLevel`) and background thread offloading (`useWorker`). All processing tuning (quality, resolution, size) is configured per-plugin via each plugin's typed options.
 
 ## Plugin Options
 

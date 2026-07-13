@@ -296,6 +296,7 @@ interface UseFileUploadOptions<TMeta = void, TPreload = undefined> {
   maxFileSize?: number; // Bytes per file
   maxTotalBatchSize?: number; // Bytes total across queue
   maxQueuedUploads?: number; // Upload backlog limit
+  pruneUploadedArtifacts?: boolean; // Progressively prune completed binaries to save memory
   autoPreventTabClose?: boolean;
   autoPauseOnOffline?: boolean;
   autoWakeLock?: boolean;

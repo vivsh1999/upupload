@@ -1,5 +1,5 @@
 {
-  "include": ["**/*.ts", "**/*.tsx"],
+  "include": ["**/*.ts", "**/*.tsx", "../../src/shims.d.ts"],
   "compilerOptions": {
     "target": "ES2022",
     "jsx": "react-jsx",
@@ -8,7 +8,8 @@
       "#/*": ["./src/*"],
       "@/*": ["./src/*"],
       "@vivsh1999/upupload/react": ["../../src/react/index.ts"],
-      "@vivsh1999/upupload/plugins": ["../../src/plugin/index.ts"]
+      "@vivsh1999/upupload/plugins": ["../../src/plugin/index.ts"],
+      "@vivsh1999/upupload/adapters": ["../../src/adapters/index.ts"]
     },
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["vite/client"],

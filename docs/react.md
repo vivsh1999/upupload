@@ -54,6 +54,7 @@ interface UseFileUploadOptions<TMeta = void, TPreload = undefined> {
   maxFileSize?: number; // Bytes per file
   maxTotalBatchSize?: number; // Bytes total across queue
   maxQueuedUploads?: number; // Upload backlog limit
+  pruneUploadedArtifacts?: boolean; // Progressively prune completed binaries to save memory
   autoPreventTabClose?: boolean;
   autoPauseOnOffline?: boolean;
   autoWakeLock?: boolean;
@@ -84,6 +85,7 @@ interface UseFileUploadOptions<TMeta = void, TPreload = undefined> {
 | `maxFileSize`            | Rejects files exceeding this size (bytes).                              |
 | `maxTotalBatchSize`      | Rejects files that would push total queue size over limit.              |
 | `maxQueuedUploads`       | Backpressure: defers new processing when this many files are uploading. |
+| `pruneUploadedArtifacts` | Progressively revokes object URLs and empties completed binary Blobs.   |
 | `autoPreventTabClose`    | Registers `beforeunload` while busy.                                    |
 | `autoPauseOnOffline`     | Auto-pauses processing on network disconnect, resumes on reconnect.     |
 | `autoWakeLock`           | Acquires screen wake lock while busy.                                   |
@@ -272,3 +274,53 @@ await Promise.all(tasks.map((t) => sem.run(() => process(t))));
 ```
 
 The hook uses this internally with `tuning.maxConcurrency` and `tuning.maxUploadConcurrency` (defaults: auto-detected from CPU count).
+
+---
+
+## Pre-built Upload Adapters
+
+UpUpload provides high-performance, tree-shakable pre-built upload adapters out-of-the-box inside `@vivsh1999/upupload/adapters` to handle uploads with built-in progress tracking.
+
+### 1. `fetchUploadAdapter`
+
+Suitable for standard multipart/form-data or binary REST endpoints. Uses `XMLHttpRequest` internally for accurate upload progress tracking.
+
+```ts
+import { fetchUploadAdapter } from "@vivsh1999/upupload/adapters";
+
+useFileUpload({
+  uploadAdapter: fetchUploadAdapter({
+    url: "/api/upload",
+    method: "POST",
+    bodyFormat: "form-data", // or "binary" for raw binary uploads
+    fieldName: "file",
+    extraFields: (artifact) => ({
+      variant: artifact.variant,
+    }),
+  }),
+});
+```
+
+### 2. `s3UploadAdapter`
+
+Suitable for direct uploads to Amazon S3 or Cloudflare R2 buckets using PUT presigned URLs.
+
+```ts
+import { s3UploadAdapter } from "@vivsh1999/upupload/adapters";
+
+useFileUpload({
+  uploadAdapter: s3UploadAdapter({
+    getPresignedUrl: async (artifact) => {
+      const res = await fetch(
+        `/api/presigned-url?filename=${artifact.filename}&type=${artifact.filetype}`,
+      );
+      const data = await res.json();
+      return data.url;
+    },
+    // Optional additional headers (e.g. S3 ACL headers)
+    headers: {
+      "x-amz-acl": "public-read",
+    },
+  }),
+});
+```

@@ -208,6 +208,12 @@ export interface UseFileUploadOptions<TMeta = void, TPreload = undefined> {
    */
   maxQueuedUploads?: number;
   /**
+   * Whether to progressively prune binary blobs and revoke object URLs from completed items.
+   * This keeps client memory usage low during large batches.
+   * @default true
+   */
+  pruneUploadedArtifacts?: boolean;
+  /**
    * Persistence mode for the upload queue.
    * - `"memory"` (default): queue state is lost on page reload.
    * - `"indexeddb"`: queue metadata is persisted to IndexedDB and restored
@@ -373,6 +379,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
     onBeforeStart,
     storageKeyPrefix,
     retryMode,
+    pruneUploadedArtifacts,
   } = options ?? {};
 
   const [config, setConfig] = useState<BrowserPipelineOptions>(() => {
@@ -389,6 +396,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
 
   const filesRef = useRef<Map<string, File>>(new Map());
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const lastProgressRef = useRef<Map<string, { time: number; progress: number }>>(new Map());
 
   const semRef = useRef(new Semaphore(tuning?.maxConcurrency ?? defaultConcurrency()));
   useEffect(() => {
@@ -437,6 +445,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
     getPipelineContextMeta,
     onBeforeStart,
     retryMode,
+    pruneUploadedArtifacts,
   });
   processOptionsRef.current = {
     config,
@@ -453,6 +462,7 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
     getPipelineContextMeta,
     onBeforeStart,
     retryMode,
+    pruneUploadedArtifacts,
   };
 
   const fireBatchProgress = useCallback(() => {
@@ -804,14 +814,22 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
                 },
                 {
                   onProgress: (p) => {
-                    const overall =
-                      pipelineEndProgress + ((i + p / 100) / total) * (99 - pipelineEndProgress);
-                    setQueue((prev) =>
-                      prev.map((q) =>
-                        q.id === item.id ? { ...q, progress: Math.min(overall, 99) } : q,
-                      ),
+                    const overall = Math.min(
+                      pipelineEndProgress + ((i + p / 100) / total) * (99 - pipelineEndProgress),
+                      99,
                     );
-                    fireBatchProgress();
+                    const now = Date.now();
+                    const last = lastProgressRef.current.get(item.id);
+                    const shouldThrottle =
+                      last && now - last.time < 100 && overall - last.progress < 1 && overall < 99;
+
+                    if (!shouldThrottle) {
+                      lastProgressRef.current.set(item.id, { time: now, progress: overall });
+                      setQueue((prev) =>
+                        prev.map((q) => (q.id === item.id ? { ...q, progress: overall } : q)),
+                      );
+                      fireBatchProgress();
+                    }
                   },
                   signal: controller.signal,
                   fileId: item.id,
@@ -838,6 +856,32 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
         setQueue((prev) => prev.map((q) => (q.id === item.id ? completedItem : q)));
 
         currentOnFileComplete?.(completedItem);
+
+        const prune = processOptionsRef.current.pruneUploadedArtifacts !== false;
+        if (prune) {
+          if (completedItem.previewUrl) {
+            URL.revokeObjectURL(completedItem.previewUrl);
+          }
+          completedItem.artifacts?.forEach((art) => {
+            if (art.url) URL.revokeObjectURL(art.url);
+          });
+
+          const prunedArtifacts = completedItem.artifacts?.map((art) => {
+            const { url: _url, ...rest } = art;
+            return {
+              ...rest,
+              blob: new Blob([]),
+            };
+          });
+
+          const { previewUrl: _pv, ...restItem } = completedItem;
+          const prunedItem = {
+            ...restItem,
+            artifacts: prunedArtifacts,
+          } as FileUploadQueueItem<TMeta>;
+
+          setQueue((prev) => prev.map((q) => (q.id === item.id ? prunedItem : q)));
+        }
       } catch (err) {
         if (controller.signal.aborted) return;
         if (processingSemAcquired) {
@@ -994,13 +1038,19 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
             { variant: a.variant, blob: a.blob, filename: a.filename, filetype: a.blob.type },
             {
               onProgress: (p) => {
-                const overall = 90 + ((i + p / 100) / total) * 10;
-                setQueue((prev) =>
-                  prev.map((q) =>
-                    q.id === fileId ? { ...q, progress: Math.min(overall, 99) } : q,
-                  ),
-                );
-                fireBatchProgress();
+                const overall = Math.min(90 + ((i + p / 100) / total) * 10, 99);
+                const now = Date.now();
+                const last = lastProgressRef.current.get(fileId);
+                const shouldThrottle =
+                  last && now - last.time < 100 && overall - last.progress < 1 && overall < 99;
+
+                if (!shouldThrottle) {
+                  lastProgressRef.current.set(fileId, { time: now, progress: overall });
+                  setQueue((prev) =>
+                    prev.map((q) => (q.id === fileId ? { ...q, progress: overall } : q)),
+                  );
+                  fireBatchProgress();
+                }
               },
               signal: controller.signal,
               fileId,
@@ -1020,6 +1070,32 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
       };
       setQueue((prev) => prev.map((q) => (q.id === fileId ? completed : q)));
       onDone?.(completed);
+
+      const prune = processOptionsRef.current.pruneUploadedArtifacts !== false;
+      if (prune) {
+        if (completed.previewUrl) {
+          URL.revokeObjectURL(completed.previewUrl);
+        }
+        completed.artifacts?.forEach((art) => {
+          if (art.url) URL.revokeObjectURL(art.url);
+        });
+
+        const prunedArtifacts = completed.artifacts?.map((art) => {
+          const { url: _url, ...rest } = art;
+          return {
+            ...rest,
+            blob: new Blob([]),
+          };
+        });
+
+        const { previewUrl: _pv, ...restItem } = completed;
+        const prunedItem = {
+          ...restItem,
+          artifacts: prunedArtifacts,
+        } as FileUploadQueueItem<TMeta>;
+
+        setQueue((prev) => prev.map((q) => (q.id === fileId ? prunedItem : q)));
+      }
     } catch (err) {
       if (controller.signal.aborted) return;
       const message = err instanceof Error ? err.message : String(err);
