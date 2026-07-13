@@ -5,6 +5,7 @@ import { Plugin } from "./plugin";
 import { warning, artifact } from "../core/result";
 import { jpegFileFromBlob } from "./_rasterize";
 import imageCompression from "browser-image-compression";
+import { isOffscreenWorkerSupported, compressImageInWorker } from "../browser/worker-client";
 
 type ImageCompressionFn = (
   file: File | Blob,
@@ -68,21 +69,51 @@ export const jpegCompressor: Plugin<JpegCompressorPluginOptions> =
       // Try browser-image-compression first, fall back to Canvas API
       let compressed: Blob | File | null = null;
 
-      try {
-        const imageCompression = await loadImageCompression();
-        compressed = await imageCompression(sourceFile, {
-          maxSizeMB: pluginOpts.maxSizeMB,
-          maxWidthOrHeight: maxWH ?? 16384,
-          useWebWorker: true,
-          maxIteration: 12,
-          fileType: "image/jpeg",
-          initialQuality: q,
-        });
-      } catch {
-        ctx.log(
-          "debug",
-          `browser-image-compression unavailable, falling back to Canvas compression for "${input.name}"`,
-        );
+      const useWorker = ctx.shared.get("pipeline:useWorker") === true;
+      if (useWorker) {
+        try {
+          if (isOffscreenWorkerSupported()) {
+            ctx.log(
+              "debug",
+              `Offloading image compression to background Web Worker for "${input.name}"`,
+            );
+            const workerBlob = await compressImageInWorker(sourceFile, {
+              quality: q,
+              ...(maxWH !== undefined ? { maxLongEdge: maxWH } : {}),
+              ...(pluginOpts.maxSizeMB !== undefined ? { maxSizeMB: pluginOpts.maxSizeMB } : {}),
+              filename: `${stemName}.${variantName}.jpg`,
+              variant: variantName,
+            });
+            compressed = new File([workerBlob], `${stemName}.${variantName}.jpg`, {
+              type: "image/jpeg",
+              lastModified: Date.now(),
+            });
+          }
+        } catch (err) {
+          ctx.log(
+            "warn",
+            `Worker compression failed for "${input.name}", falling back: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+
+      if (!compressed) {
+        try {
+          const imageCompression = await loadImageCompression();
+          compressed = await imageCompression(sourceFile, {
+            maxSizeMB: pluginOpts.maxSizeMB,
+            maxWidthOrHeight: maxWH ?? 16384,
+            useWebWorker: true,
+            maxIteration: 12,
+            fileType: "image/jpeg",
+            initialQuality: q,
+          });
+        } catch {
+          ctx.log(
+            "debug",
+            `browser-image-compression unavailable, falling back to Canvas compression for "${input.name}"`,
+          );
+        }
       }
 
       if (!compressed) {

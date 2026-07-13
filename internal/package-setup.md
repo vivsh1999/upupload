@@ -7,7 +7,7 @@ This document serves as the standard operating procedure for creating, developin
 ## 1. Prerequisites
 
 - **Node.js**: >= 18.0.0
-- **Package Manager**: pnpm (v10.33.0 or higher)
+- **Package Manager**: pnpm (v10.2.0 or higher)
 - **Toolchain**: Vite+ (`vp`)
 
 ---
@@ -45,7 +45,7 @@ Crucial for publishing and metadata. Ensure these fields are set:
     "check": "vp check",
     "prepublishOnly": "vp run build"
   },
-  "packageManager": "pnpm@10.33.0"
+  "packageManager": "pnpm@10.2.0"
 }
 ```
 

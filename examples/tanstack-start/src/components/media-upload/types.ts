@@ -77,6 +77,8 @@ export interface MediaUploadSkeletonProps {
   thumbnailEnabled: boolean;
   onOptimizedEnabledChange: (value: boolean) => void;
   onThumbnailEnabledChange: (value: boolean) => void;
+  useWorker: boolean;
+  onUseWorkerChange: (value: boolean) => void;
   qualityPercent: number;
   onQualityPercentChange: (value: number) => void;
   maxLongEdge: MaxLongEdgePreset;
@@ -135,6 +137,8 @@ export interface MediaUploadFieldProps
       | "thumbnailEnabled"
       | "onOptimizedEnabledChange"
       | "onThumbnailEnabledChange"
+      | "useWorker"
+      | "onUseWorkerChange"
       | "fileInputProps"
       | "folderInputProps"
       | "dropTargetProps"

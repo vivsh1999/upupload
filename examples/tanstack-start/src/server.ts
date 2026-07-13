@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
-import { access, mkdir, rename, rm } from "node:fs/promises";
+import { access, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { Server as TusServer } from "@tus/server";
@@ -201,6 +201,40 @@ const fetch: RequestHandler<Register> = async (request, opts) => {
   const url = new URL(request.url);
   if (url.pathname === TUS_API_PATH || url.pathname.startsWith(`${TUS_API_PATH}/`)) {
     return tusServer.handleWeb(request);
+  }
+  if (url.pathname === "/api/upload" && request.method === "POST") {
+    try {
+      const formData = await request.formData();
+      const file = formData.get("file") as File;
+      const variant = (formData.get("variant") as string) || "original";
+
+      if (!file) {
+        return new Response(JSON.stringify({ error: "Missing file" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const targetDir = path.join(uploadDir, variant);
+      await mkdir(targetDir, { recursive: true });
+      const targetPath = await uniqueDestinationPath(targetDir, file.name);
+
+      const buffer = Buffer.from(await file.arrayBuffer());
+      await writeFile(targetPath, buffer);
+
+      return new Response(JSON.stringify({ success: true, path: targetPath }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (err) {
+      return new Response(
+        JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
   }
   return startHandler(request, opts);
 };

@@ -1,6 +1,6 @@
 {
   "name": "@vivsh1999/upupload",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Client-first, multi-stage file uploader/processor with safe fallback-to-original behavior",
   "license": "MIT",
   "repository": {
@@ -68,15 +68,21 @@
       "import": "./dist/server/index.mjs",
       "default": "./dist/server/index.mjs"
     },
+    "./adapters": {
+      "types": "./dist/adapters/index.d.mts",
+      "import": "./dist/adapters/index.mjs",
+      "default": "./dist/adapters/index.mjs"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "vp pack src/index.ts src/core/index.ts src/browser/index.ts src/plugin/index.ts src/plugin/jpeg-compressor.ts src/plugin/raw-to-jpeg.ts src/plugin/video-poster.ts src/plugin/test-utils.ts src/react/index.ts src/server/index.ts src/preset/index.ts",
-    "dev": "vp pack src/index.ts src/core/index.ts src/browser/index.ts src/plugin/index.ts src/plugin/jpeg-compressor.ts src/plugin/raw-to-jpeg.ts src/plugin/video-poster.ts src/plugin/test-utils.ts src/react/index.ts src/server/index.ts src/preset/index.ts --watch",
+    "build": "vp pack src/index.ts src/core/index.ts src/browser/index.ts src/plugin/index.ts src/plugin/jpeg-compressor.ts src/plugin/raw-to-jpeg.ts src/plugin/video-poster.ts src/plugin/test-utils.ts src/react/index.ts src/server/index.ts src/preset/index.ts src/adapters/index.ts",
+    "dev": "vp pack src/index.ts src/core/index.ts src/browser/index.ts src/plugin/index.ts src/plugin/jpeg-compressor.ts src/plugin/raw-to-jpeg.ts src/plugin/video-poster.ts src/plugin/test-utils.ts src/react/index.ts src/server/index.ts src/preset/index.ts src/adapters/index.ts --watch",
     "test": "vp test",
+    "test:browser": "vitest --browser=chromium --run",
     "check": "vp check",
     "prepublishOnly": "vp run build",
     "prepare": "vp config",
@@ -97,8 +103,11 @@
   },
   "devDependencies": {
     "@types/react": "^19.2.0",
+    "@vitest/browser": "^4.1.10",
+    "@vitest/browser-playwright": "^4.1.10",
     "canvas": "^3.1.0",
     "jsdom": "^28.1.0",
+    "playwright": "^1.61.1",
     "react": "^19.2.0",
     "typescript": "^6.0.2",
     "vite-plus": "^0.1.20",

@@ -75,10 +75,18 @@ export type BrowserPipelineOptions = {
    * @default "silent"
    */
   logLevel?: LogLevel;
+  /**
+   * When `true`, offloads the pipeline execution (RAW decoding, JPEG compression)
+   * to an inlined Web Worker to avoid blocking the main UI thread.
+   *
+   * @default false
+   */
+  useWorker?: boolean;
 };
 
 export const DEFAULT_BROWSER_PIPELINE_OPTIONS: BrowserPipelineOptions = {
   logLevel: "silent",
+  useWorker: false,
 };
 
 // ---------------------------------------------------------------------------

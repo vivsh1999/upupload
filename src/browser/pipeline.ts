@@ -223,6 +223,7 @@ export async function runDefaultBrowserPipeline(
     }
   }
   ctx.shared.set(PIPELINE_CLASSIF_KEY, classif);
+  ctx.shared.set("pipeline:useWorker", pipelineOpts.useWorker ?? false);
 
   const matchedPlugins = plugins.filter((p) => p.supports({ ...input, size: input.file.size }));
   checkDuplicateStageIds(matchedPlugins);
