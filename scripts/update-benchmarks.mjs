@@ -49,6 +49,7 @@ const GROUPS = [
       "Wedding RAW (DNG) → client-proof + gallery-thumb",
       "Wedding JPEG → client-proof + gallery-thumb",
       "Wedding PNG → client-proof + gallery-thumb",
+      "Web Worker vs Main Thread Compression",
     ],
   },
 ];
@@ -67,6 +68,29 @@ for (let i = 0; i < GROUPS.length; i++) {
   for (const d of GROUPS[i].describes) {
     describeToGroup[d] = i;
   }
+}
+
+// Fetch and parse last minor version benchmarks
+const oldBenchMap = {};
+const LAST_MINOR_TAG = "v0.6.1";
+try {
+  const oldReadme = execSync(`git show ${LAST_MINOR_TAG}:README.md`, {
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  const lines = oldReadme.split("\n");
+  for (const line of lines) {
+    const match = line.match(/^\s*\|\s*(.+?)\s*\|\s*([\d,]+\.\d+)\s*\|/);
+    if (match) {
+      const fullname = match[1].trim();
+      const hz = Number(match[2].replace(/,/g, ""));
+      if (!isNaN(hz)) {
+        oldBenchMap[fullname] = hz;
+      }
+    }
+  }
+} catch (err) {
+  console.warn(`Could not read or parse benchmarks from ${LAST_MINOR_TAG}:`, err.message);
 }
 
 let currentDescribe = "";
@@ -120,14 +144,32 @@ const sections = [];
 let currentGroupIdx = -1;
 
 for (const r of benchResults) {
+  const fullName = `${r.describe} > ${r.name}`;
   if (r.groupIdx !== currentGroupIdx) {
     const group = GROUPS[r.groupIdx];
     const title = group ? group.title : "Other";
-    sections.push(`### ${title}\n\n| Benchmark | Ops/sec |\n|-----------|---------|\n`);
+    sections.push(
+      `### ${title}\n\n| Benchmark | Ops/sec | Prev Minor (${LAST_MINOR_TAG}) | Change |\n|-----------|---------|---------------------|--------|\n`,
+    );
     currentGroupIdx = r.groupIdx;
   }
-  const fullName = `${r.describe} > ${r.name}`;
-  sections[sections.length - 1] += `| ${fullName} | ${r.hz} |\n`;
+
+  let oldHzStr = "-";
+  let changeStr = "-";
+  const oldHz = oldBenchMap[fullName];
+  if (oldHz !== undefined) {
+    oldHzStr = oldHz.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    const currentHz = Number(r.hz.replace(/,/g, ""));
+    const percentChange = ((currentHz - oldHz) / oldHz) * 100;
+    const sign = percentChange >= 0 ? "+" : "";
+    const color = percentChange >= 0 ? "🟢" : "🔴";
+    changeStr = `${color} ${sign}${percentChange.toFixed(1)}%`;
+  }
+
+  sections[sections.length - 1] += `| ${fullName} | ${r.hz} | ${oldHzStr} | ${changeStr} |\n`;
 }
 
 // Some describes might have no active results (all skipped) — don't render empty groups
