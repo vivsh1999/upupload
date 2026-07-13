@@ -57,8 +57,10 @@ const GROUPS = [
 let output;
 try {
   output = execSync("pnpm bench", { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
-} catch {
+} catch (err) {
   console.error("Benchmarks failed — aborting.");
+  if (err.stdout) console.error("STDOUT:", err.stdout);
+  if (err.stderr) console.error("STDERR:", err.stderr);
   process.exit(1);
 }
 
