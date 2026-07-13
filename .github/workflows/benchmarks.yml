@@ -44,11 +44,34 @@ jobs:
       - name: Resolve baseline tag
         id: resolve-tag
         run: |
-          CURRENT_VERSION="v$(jq -r .version package.json)"
-          PREV_TAG=$(git tag --sort=-v:refname | grep -v "$CURRENT_VERSION" | head -n 1)
-          if [ -z "$PREV_TAG" ]; then
-            PREV_TAG="v0.6.1"
-          fi
+          PREV_TAG=$(node -e '
+            const { readFileSync } = require("fs");
+            const { execSync } = require("child_process");
+            const pkg = JSON.parse(readFileSync("package.json", "utf-8"));
+            const [currentMajor, currentMinor] = pkg.version.split(".").map(Number);
+            let prevTag = "v0.6.1";
+            try {
+              const tags = execSync("git tag --sort=-v:refname", { encoding: "utf-8" })
+                .split("\n")
+                .map((t) => t.trim())
+                .filter(Boolean);
+              const found = tags.find((t) => {
+                const verStr = t.startsWith("v") ? t.slice(1) : t;
+                const parts = verStr.split(".");
+                if (parts.length >= 2) {
+                  const major = Number(parts[0]);
+                  const minor = Number(parts[1]);
+                  if (!isNaN(major) && !isNaN(minor)) {
+                    return major < currentMajor || (major === currentMajor && minor < currentMinor);
+                  }
+                }
+                return false;
+              });
+              if (found) prevTag = found;
+            } catch {}
+            console.log(prevTag);
+          ')
+          echo "Resolved baseline tag: $PREV_TAG"
           echo "PREV_TAG=$PREV_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Cache baseline benchmarks

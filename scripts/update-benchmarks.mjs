@@ -87,18 +87,30 @@ const oldBenchMap = {};
 let LAST_MINOR_TAG = "v0.6.1"; // Default fallback
 try {
   const pkg = JSON.parse(readFileSync("package.json", "utf-8"));
-  const currentVersion = "v" + pkg.version;
+  const [currentMajor, currentMinor] = pkg.version.split(".").map(Number);
   const tags = execSync("git tag --sort=-v:refname", { encoding: "utf-8" })
     .split("\n")
     .map((t) => t.trim())
     .filter(Boolean);
 
-  const prevTag = tags.find((t) => t !== currentVersion && !t.startsWith(currentVersion));
-  if (prevTag) {
-    LAST_MINOR_TAG = prevTag;
+  const prevMinorTag = tags.find((t) => {
+    const verStr = t.startsWith("v") ? t.slice(1) : t;
+    const parts = verStr.split(".");
+    if (parts.length >= 2) {
+      const major = Number(parts[0]);
+      const minor = Number(parts[1]);
+      if (!isNaN(major) && !isNaN(minor)) {
+        return major < currentMajor || (major === currentMajor && minor < currentMinor);
+      }
+    }
+    return false;
+  });
+
+  if (prevMinorTag) {
+    LAST_MINOR_TAG = prevMinorTag;
   }
 } catch (err) {
-  console.warn("Failed to dynamically resolve the previous tag:", err.message);
+  console.warn("Failed to dynamically resolve the previous minor tag:", err.message);
 }
 
 if (existsSync("bench_baseline.txt")) {
