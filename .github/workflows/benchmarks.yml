@@ -41,11 +41,29 @@ jobs:
       - name: Install dependencies
         run: vp install
 
-      - name: Run benchmarks
-        run: vp run bench
+      - name: Run baseline benchmarks
+        run: |
+          CURRENT_VERSION="v$(jq -r .version package.json)"
+          PREV_TAG=$(git tag --sort=-v:refname | grep -v "$CURRENT_VERSION" | head -n 1)
+          if [ -z "$PREV_TAG" ]; then
+            PREV_TAG="v0.6.1"
+          fi
+          echo "Dynamically resolved baseline tag: $PREV_TAG"
+          git checkout $PREV_TAG
+          vp install
+          npx vitest bench > bench_baseline.txt
+          git checkout -
+
+      - name: Run current benchmarks
+        run: |
+          vp install
+          npx vitest bench > bench_main.txt
 
       - name: Update README with results
         run: node scripts/update-benchmarks.mjs
+
+      - name: Clean up temporary benchmark logs
+        run: rm -f bench_baseline.txt bench_main.txt
 
       - name: Commit updated README
         run: |
