@@ -84,7 +84,7 @@ for (let i = 0; i < GROUPS.length; i++) {
 const oldBenchMap = {};
 
 // Resolve previous tag dynamically
-let LAST_MINOR_TAG = "v0.6.1"; // Default fallback
+let LAST_MINOR_TAG = "";
 try {
   const pkg = JSON.parse(readFileSync("package.json", "utf-8"));
   const [currentMajor, currentMinor] = pkg.version.split(".").map(Number);
@@ -93,6 +93,7 @@ try {
     .map((t) => t.trim())
     .filter(Boolean);
 
+  LAST_MINOR_TAG = tags[tags.length - 1] || "v0.0.1";
   const prevMinorTag = tags.find((t) => {
     const verStr = t.startsWith("v") ? t.slice(1) : t;
     const parts = verStr.split(".");

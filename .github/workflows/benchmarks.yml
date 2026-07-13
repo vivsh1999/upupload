@@ -49,12 +49,13 @@ jobs:
             const { execSync } = require("child_process");
             const pkg = JSON.parse(readFileSync("package.json", "utf-8"));
             const [currentMajor, currentMinor] = pkg.version.split(".").map(Number);
-            let prevTag = "v0.6.1";
+            let prevTag = "";
             try {
               const tags = execSync("git tag --sort=-v:refname", { encoding: "utf-8" })
                 .split("\n")
                 .map((t) => t.trim())
                 .filter(Boolean);
+              prevTag = tags[tags.length - 1] || "v0.0.1";
               const found = tags.find((t) => {
                 const verStr = t.startsWith("v") ? t.slice(1) : t;
                 const parts = verStr.split(".");
