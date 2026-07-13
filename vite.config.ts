@@ -2,6 +2,7 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   staged: {
+    "src/**/*": "node scripts/check-changelog.mjs",
     "*": "vp check --fix",
   },
   pack: {
