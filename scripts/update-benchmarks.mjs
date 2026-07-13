@@ -56,7 +56,7 @@ const GROUPS = [
 
 let output;
 try {
-  output = execSync("pnpm bench", { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+  output = execSync("npx vitest bench", { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
 } catch (err) {
   console.error("Benchmarks failed — aborting.");
   if (err.stdout) console.error("STDOUT:", err.stdout);

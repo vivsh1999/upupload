@@ -5,10 +5,10 @@ import { jpegCompressor } from "../plugin/jpeg-compressor";
 import { rawToJpeg } from "../plugin/raw-to-jpeg";
 
 declare global {
-  var __FILE_PIPELINE_DOM_CANVAS: boolean | undefined;
+  var __MEDIA_PIPELINE_DOM_CANVAS: boolean | undefined;
 }
 
-const DOM_CANVAS = !!globalThis.__FILE_PIPELINE_DOM_CANVAS;
+const DOM_CANVAS = !!globalThis.__MEDIA_PIPELINE_DOM_CANVAS;
 
 async function createTestImageFile(
   width: number,
