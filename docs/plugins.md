@@ -107,8 +107,9 @@ Handles standard raster images (JPEG, PNG, WebP, BMP, GIF, AVIF).
   ```
 - If a previous plugin placed a decoded file in shared context (`pipeline:current`), the compressor operates on that instead of the original.
 - `quality` and `maxSizeMB` are required; `variant` defaults to `"outputFile"`, `maxLongEdge` defaults to `-1` (original size).
+- Optional tuning: `useWebWorker` (default `true`), `maxIteration` (default `12`, caps the re-encode attempts spent trying to reach `maxSizeMB`), `libURL` (self-host the `browser-image-compression` script the worker loads via `importScripts` instead of the default public CDN), and `exifOrientation` (supplying it avoids `browser-image-compression` reading the entire source blob just to discover orientation).
 - Does NOT handle RAW/HEIC/TIFF — use `rawToJpeg` for those
-- **Dep:** `browser-image-compression` (install separately); **falls back** to Canvas API when unavailable
+- **Dep:** `browser-image-compression` (install separately); **falls back** to Canvas API when unavailable, logging a `warn` naming the failure
 
 ### `rawToJpeg`
 

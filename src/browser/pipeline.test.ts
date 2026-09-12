@@ -295,4 +295,172 @@ describe("plugin ordering", () => {
     await runDefaultBrowserPipeline(source(), {}, { plugins: [second, first] });
     expect(order).toEqual(["first", "second"]);
   });
+
+  it("still runs a plugin whose `after` target was filtered out by supports()", async () => {
+    const order: string[] = [];
+
+    const filtered = new Plugin({
+      id: "filtered-plugin",
+      options: {},
+      supports: () => false,
+      run: async () => {
+        order.push("filtered");
+        return emptyResult();
+      },
+    });
+
+    const dependent = new Plugin({
+      id: "dependent-plugin",
+      options: {},
+      supports: () => true,
+      after: ["filtered-plugin"],
+      run: async () => {
+        order.push("dependent");
+        return emptyResult();
+      },
+    });
+
+    await runDefaultBrowserPipeline(source(), {}, { plugins: [filtered, dependent] });
+
+    expect(order).toEqual(["dependent"]);
+  });
+
+  it("still runs a plugin whose `before` target was filtered out by supports()", async () => {
+    const order: string[] = [];
+
+    const filtered = new Plugin({
+      id: "filtered-thumb",
+      options: {},
+      supports: () => false,
+      run: async () => {
+        order.push("filtered-thumb");
+        return emptyResult();
+      },
+    });
+
+    const blocker = new Plugin({
+      id: "blocker-plugin",
+      options: {},
+      supports: () => true,
+      before: ["filtered-thumb"],
+      run: async () => {
+        order.push("blocker");
+        return emptyResult();
+      },
+    });
+
+    await runDefaultBrowserPipeline(source(), {}, { plugins: [blocker, filtered] });
+
+    expect(order).toEqual(["blocker"]);
+  });
+
+  it("warns when a declared ordering edge names a plugin that is absent", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const dependent = new Plugin({
+      id: "dependent-plugin",
+      options: {},
+      supports: () => true,
+      after: ["missing-plugin"],
+      run: async () => emptyResult(),
+    });
+
+    await runDefaultBrowserPipeline(source(), { logLevel: "warn" }, { plugins: [dependent] });
+
+    const messages = warn.mock.calls.map((call) => call.join(" "));
+    expect(messages.some((message) => message.includes("missing-plugin"))).toBe(true);
+    expect(messages.some((message) => message.includes("dependent-plugin"))).toBe(true);
+
+    warn.mockRestore();
+  });
+
+  it("stays silent about absent edges when the log level suppresses warnings", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const dependent = new Plugin({
+      id: "dependent-plugin",
+      options: {},
+      supports: () => true,
+      after: ["missing-plugin"],
+      run: async () => emptyResult(),
+    });
+
+    await runDefaultBrowserPipeline(source(), { logLevel: "silent" }, { plugins: [dependent] });
+
+    expect(warn).not.toHaveBeenCalled();
+
+    warn.mockRestore();
+  });
+
+  it("still emits a stage whose `after` target was filtered out, because the thumb depends on it", async () => {
+    const stageIds: string[] = [];
+
+    const rawDecoder = new Plugin({
+      id: "raw-to-jpeg",
+      options: {},
+      supports: (file) => file.name.toLowerCase().endsWith(".cr3"),
+      run: async () => emptyResult(),
+    });
+
+    const extractor = new Plugin<Record<string, never>>({
+      id: "exif-extractor",
+      options: {},
+      supports: () => true,
+      after: ["raw-to-jpeg"],
+      before: ["jpeg-compressor", "jpeg-compressor:web", "jpeg-compressor:thumb"],
+      run: async () => emptyResult(),
+    });
+
+    const web = new Plugin({
+      id: "jpeg-compressor:web",
+      options: {},
+      supports: () => true,
+      run: async () => emptyResult(),
+    });
+
+    const thumb = new Plugin({
+      id: "jpeg-compressor:thumb",
+      options: {},
+      supports: () => true,
+      run: async () => emptyResult(),
+    });
+
+    await runDefaultBrowserPipeline(
+      source(),
+      {},
+      {
+        plugins: [rawDecoder, extractor, web, thumb],
+        onProgress: (event) => {
+          if (event.phase === "start") stageIds.push(event.stageId);
+        },
+      },
+    );
+
+    expect(stageIds).toContain("exif-extractor");
+    expect(stageIds).toContain("jpeg-compressor:web");
+    expect(stageIds).toContain("jpeg-compressor:thumb");
+    expect(stageIds).not.toContain("raw-to-jpeg");
+  });
+
+  it("still throws on a declared cycle", async () => {
+    const a = new Plugin({
+      id: "cycle-a",
+      options: {},
+      supports: () => true,
+      after: ["cycle-b"],
+      run: async () => emptyResult(),
+    });
+
+    const b = new Plugin({
+      id: "cycle-b",
+      options: {},
+      supports: () => true,
+      after: ["cycle-a"],
+      run: async () => emptyResult(),
+    });
+
+    await expect(runDefaultBrowserPipeline(source(), {}, { plugins: [a, b] })).rejects.toThrow(
+      /Cycle detected/,
+    );
+  });
 });

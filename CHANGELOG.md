@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.7.2] — 2026-09-12
+
+### Fixed
+
+#### Ordering edges to filtered-out plugins silently dropped stages
+
+- `topologicalSort` now ignores an `after` / `before` dependency that names a plugin which is not part of the matched set (the common case being a plugin removed by `supports()`). Previously the missing dependency still incremented the dependent plugin's in-degree, nothing could ever decrement it, and the plugin was silently omitted from the pipeline — taking with it anything else that declared `before` that plugin. A plugin set that declared `after: ["raw-to-jpeg"]` while uploading a JPEG therefore lost both that plugin and a downstream compressor instance.
+- Those dangling edges now also produce a `warn`-level log naming the plugin, the missing dependency, and the relation, so the situation is diagnosable instead of silent.
+
+### Added
+
+#### `jpegCompressor` option pass-through
+
+- `libURL` — URL of the `browser-image-compression` script loaded inside the Web Worker, so consumers can self-host it instead of depending on the public CDN on the upload hot path.
+- `exifOrientation` — forwards the source orientation to `browser-image-compression`, which skips reading the entire source blob to discover it.
+- `useWebWorker` — opt out of worker-based compression.
+- `maxIteration` — cap the re-encode attempts spent trying to satisfy `maxSizeMB`. Previously hardcoded to `12`.
+
+### Changed
+
+- A `browser-image-compression` failure now logs at `warn` level with the underlying error message instead of a silent `debug` line, so falling back to Canvas compression is visible.
+
 ## [0.7.0] — 2026-07-14
 
 ### Added

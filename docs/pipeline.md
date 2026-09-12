@@ -93,6 +93,7 @@ validatePipeline(defs);
 - **Group skipping** — stages belong to named `group`s; a stage can `skipGroup` to disable an entire phase.
 - **Skip remaining** — `skipRemaining: true` halts all remaining stages.
 - **Cycle detection** — circular `after`/`before` dependencies throw with the cycle path.
+- **Edges to filtered-out plugins are ignored** — plugins are matched by `supports()` before the ordering graph is built, so an `after`/`before` entry naming a plugin that did not match (or does not exist) is skipped and logged at `warn` level. It never blocks the dependent plugin from running.
 - **Duplicate stage ID detection** — two plugins producing the same stage ID throw with disambiguation guidance.
 
 ## Pipeline Context

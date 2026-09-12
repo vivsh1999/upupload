@@ -28,19 +28,30 @@ export {
   toThumbName,
 } from "./pipeline-utils";
 
-function topologicalSort(plugins: ProcessingPlugin<any>[]): ProcessingPlugin<any>[] {
+type MissingEdge = { pluginId: string; depId: string; relation: "after" | "before" };
+
+function topologicalSort(plugins: ProcessingPlugin<any>[]): {
+  sorted: ProcessingPlugin<any>[];
+  missingEdges: MissingEdge[];
+} {
   const byId = new Map<string, ProcessingPlugin<any>>();
   const inDegree = new Map<string, number>();
   const adj = new Map<string, string[]>();
+  const missingEdges: MissingEdge[] = [];
 
   for (const p of plugins) {
     byId.set(p.id, p);
     if (!inDegree.has(p.id)) inDegree.set(p.id, 0);
     if (!adj.has(p.id)) adj.set(p.id, []);
+  }
 
+  for (const p of plugins) {
     if (p.after) {
       for (const depId of p.after) {
-        if (!adj.has(depId)) adj.set(depId, []);
+        if (!byId.has(depId)) {
+          missingEdges.push({ pluginId: p.id, depId, relation: "after" });
+          continue;
+        }
         adj.get(depId)!.push(p.id);
         inDegree.set(p.id, (inDegree.get(p.id) ?? 0) + 1);
       }
@@ -48,8 +59,11 @@ function topologicalSort(plugins: ProcessingPlugin<any>[]): ProcessingPlugin<any
 
     if (p.before) {
       for (const depId of p.before) {
+        if (!byId.has(depId)) {
+          missingEdges.push({ pluginId: p.id, depId, relation: "before" });
+          continue;
+        }
         adj.get(p.id)!.push(depId);
-        if (!inDegree.has(depId)) inDegree.set(depId, 0);
         inDegree.set(depId, (inDegree.get(depId) ?? 0) + 1);
       }
     }
@@ -117,7 +131,7 @@ function topologicalSort(plugins: ProcessingPlugin<any>[]): ProcessingPlugin<any
     }
   }
 
-  return sorted;
+  return { sorted, missingEdges };
 }
 
 /**
@@ -227,7 +241,14 @@ export async function runDefaultBrowserPipeline(
 
   const matchedPlugins = plugins.filter((p) => p.supports({ ...input, size: input.file.size }));
   checkDuplicateStageIds(matchedPlugins);
-  const sorted = topologicalSort(matchedPlugins);
+  const { sorted, missingEdges } = topologicalSort(matchedPlugins);
+
+  for (const edge of missingEdges) {
+    log(
+      "warn",
+      `Plugin "${edge.pluginId}" declares ${edge.relation} "${edge.depId}", which is not in this pipeline (it may have been filtered out by supports()). That ordering constraint is ignored.`,
+    );
+  }
 
   const pluginStages: PipelineStage<PipelineSource, PipelineResult>[] = [];
   for (const plugin of sorted) {
