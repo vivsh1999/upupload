@@ -32,6 +32,29 @@ export interface JpegCompressorPluginOptions {
   maxLongEdge?: number;
   maxSizeMB: number;
   debug?: boolean;
+  /**
+   * URL of the `browser-image-compression` script the Web Worker loads via
+   * `importScripts`. Defaults to the library's public CDN build. Supply a
+   * same-origin URL to keep the compression hot path free of a third-party
+   * dependency (and to keep it working offline).
+   */
+  libURL?: string;
+  /**
+   * EXIF orientation (1-8) of the source image. When supplied,
+   * `browser-image-compression` skips reading the entire source blob to discover
+   * it, which removes a full-file read per compression.
+   */
+  exifOrientation?: number;
+  /**
+   * Run the compression inside a Web Worker. Defaults to `true`. Set to `false`
+   * to keep the work on the main thread.
+   */
+  useWebWorker?: boolean;
+  /**
+   * Maximum re-encode attempts `browser-image-compression` may spend trying to
+   * satisfy {@link JpegCompressorPluginOptions.maxSizeMB}. Defaults to `12`.
+   */
+  maxIteration?: number;
 }
 
 /**
@@ -103,15 +126,19 @@ export const jpegCompressor: Plugin<JpegCompressorPluginOptions> =
           compressed = await imageCompression(sourceFile, {
             maxSizeMB: pluginOpts.maxSizeMB,
             maxWidthOrHeight: maxWH ?? 16384,
-            useWebWorker: true,
-            maxIteration: 12,
+            useWebWorker: pluginOpts.useWebWorker ?? true,
+            maxIteration: pluginOpts.maxIteration ?? 12,
             fileType: "image/jpeg",
+            ...(pluginOpts.libURL !== undefined ? { libURL: pluginOpts.libURL } : {}),
+            ...(pluginOpts.exifOrientation !== undefined
+              ? { exifOrientation: pluginOpts.exifOrientation }
+              : {}),
             initialQuality: q,
           });
-        } catch {
+        } catch (err) {
           ctx.log(
-            "debug",
-            `browser-image-compression unavailable, falling back to Canvas compression for "${input.name}"`,
+            "warn",
+            `browser-image-compression failed for "${input.name}", falling back to Canvas compression: ${err instanceof Error ? err.message : String(err)}`,
           );
         }
       }
