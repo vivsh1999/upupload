@@ -35,8 +35,11 @@ After making ANY changes, run:
 npx tsc --noEmit                           # Main project
 npx tsc --noEmit                            # (if changed) Examples
 pnpm run test                               # 106+ tests must pass
+pnpm run test:browser                       # Real-Chromium integration tests
 pnpm run build                              # Dist must compile
 ```
+
+`test:browser` runs the `*.browser.test.ts` files in real Chromium (see `vitest.browser.config.ts`); the default `pnpm run test` excludes them, so jsdom CI needs no browser. Locally it needs `npx playwright install chromium` once.
 
 # Documentation (JSR)
 

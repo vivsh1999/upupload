@@ -82,7 +82,7 @@
     "build": "vp pack src/index.ts src/core/index.ts src/browser/index.ts src/plugin/index.ts src/plugin/jpeg-compressor.ts src/plugin/raw-to-jpeg.ts src/plugin/video-poster.ts src/plugin/test-utils.ts src/react/index.ts src/server/index.ts src/preset/index.ts src/adapters/index.ts",
     "dev": "vp pack src/index.ts src/core/index.ts src/browser/index.ts src/plugin/index.ts src/plugin/jpeg-compressor.ts src/plugin/raw-to-jpeg.ts src/plugin/video-poster.ts src/plugin/test-utils.ts src/react/index.ts src/server/index.ts src/preset/index.ts src/adapters/index.ts --watch",
     "test": "vp test",
-    "test:browser": "vitest --browser=chromium --run",
+    "test:browser": "vitest run --config vitest.browser.config.ts",
     "check": "vp check",
     "prepublishOnly": "vp run build",
     "prepare": "vp config",
@@ -103,15 +103,15 @@
   },
   "devDependencies": {
     "@types/react": "^19.2.0",
-    "@vitest/browser": "^4.1.10",
-    "@vitest/browser-playwright": "^4.1.10",
+    "@vitest/browser": "^4.1.11",
+    "@vitest/browser-playwright": "^4.1.11",
     "canvas": "^3.1.0",
     "jsdom": "^28.1.0",
     "playwright": "^1.61.1",
     "react": "^19.2.0",
     "typescript": "^6.0.2",
     "vite-plus": "^0.1.20",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.11"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0"
