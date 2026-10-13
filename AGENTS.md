@@ -209,6 +209,17 @@ const registry = [
     { instanceId: "thumb" },
   ),
 ];
+
+// Or emit several sizes from ONE decode (each multi-instance clone above decodes again):
+const registry = [
+  rawToJpeg,
+  jpegCompressor.with({
+    variants: [
+      { variant: "client-proof", quality: 85, maxLongEdge: 2560 },
+      { variant: "thumbnail", quality: 78, maxLongEdge: 640, maxSizeMB: 0.25 },
+    ],
+  }),
+];
 ```
 
 `videoPoster` extracts a JPEG poster frame. Optionally accepts `produceArtifact: false` to skip emitting an artifact (sets `pipeline:current` only).
@@ -270,6 +281,7 @@ Key features:
 - **`retryUpload(fileId)`** — re-runs upload adapter only (no re-processing)
 - **`isDragOver` state** — composable drag-and-drop with enter/leave counter
 - **`tuning.maxConcurrency` / `tuning.maxUploadConcurrency`** — separate semaphores for processing and upload
+- **`pipelineConfig`** — seeds the hook's initial `BrowserPipelineOptions`; every field is forwarded (e.g. `useWorker`, not just `logLevel`), then `updateConfig(patch)` changes it
 - **Preview URLs** — `previewUrl` and per-artifact `url` on queue items (auto-released)
 - **`startUpload(fileIds?)`** — selective processing of specific items
 - **Artifact blobs** — each artifact carries a `blob: Blob` for upload or display
@@ -458,6 +470,7 @@ Used internally by `useFileUpload` with `tuning.maxConcurrency` and `tuning.maxU
 - `src/plugin/jpeg-compressor.ts` — JPEG/PNG/WebP compressor plugin
 - `src/plugin/video-poster.ts` — Video poster frame plugin
 - `src/plugin/_rasterize.ts` — Canvas JPEG conversion (internal)
+- `src/plugin/_jpegVariants.ts` — One-decode multi-variant JPEG encoder (internal)
 - `src/plugin/_rawDecode.ts` — LibRaw WASM decoder (internal)
 - `src/plugin/_optionalDecoders.ts` — HEIC/TIFF dynamic imports (internal)
 - `src/plugin/index.ts` — Barrel
@@ -468,12 +481,14 @@ Used internally by `useFileUpload` with `tuning.maxConcurrency` and `tuning.maxU
 - `src/browser/pipeline-utils.ts` — `PipelineDef`, `PluginRef`, `PIPELINE_CURRENT_KEY`, `PIPELINE_CLASSIF_KEY`, `validatePipeline()`
 - `src/browser/audio.ts` — `audioBufferToWav()`, `acquireAudioContext()` (pooled), `isMediaRecorderSupported()`
 - `src/browser/canvas.ts` — `createCanvas()` (auto OffscreenCanvas fallback), `isOffscreenCanvasSupported()`
+- `src/browser/worker-client.ts` — pooled worker dispatch: `compressImageInWorker()`, `compressVariantsInWorker()` (one decode → N variants), `terminateWorkerPool()`
 - `src/browser/allowlist.ts` — File type classification
 - `src/browser/index.ts` — Barrel
 
 ### React
 
 - `src/react/index.ts` — `useFileUpload` hook
+- `src/react/_config.ts` — initial `BrowserPipelineOptions` resolution (forwards every `pipelineConfig` field)
 - `src/react/utils.ts` — `Semaphore` utility
 - `src/react/persistence.ts` — IndexedDB persistence helpers
 

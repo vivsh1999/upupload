@@ -3,9 +3,16 @@ import { fileExtensionLower, RASTER_IMAGE_EXTENSIONS, RAW_EXTENSIONS } from "../
 import { PIPELINE_CURRENT_KEY } from "../core/constants";
 import { Plugin } from "./plugin";
 import { warning, artifact } from "../core/result";
+import type { PipelineContext, PipelineResult } from "../core/types";
 import { jpegFileFromBlob } from "./_rasterize";
+import { encodeJpegVariants } from "./_jpegVariants";
+import type { EncodedJpegVariant, JpegVariantJob } from "./_jpegVariants";
 import imageCompression from "browser-image-compression";
-import { isOffscreenWorkerSupported, compressImageInWorker } from "../browser/worker-client";
+import {
+  compressImageInWorker,
+  compressVariantsInWorker,
+  isOffscreenWorkerSupported,
+} from "../browser/worker-client";
 
 type ImageCompressionFn = (
   file: File | Blob,
@@ -26,12 +33,50 @@ function isAnyImage(file: { name: string; type?: string | null }): boolean {
   return RASTER_IMAGE_EXTENSIONS.has(ext) || RAW_EXTENSIONS.has(ext) || ext === ".svg";
 }
 
+/**
+ * One output variant for the {@link JpegCompressorPluginOptions.variants}
+ * multi-variant mode. Every field is optional and falls back to the plugin's
+ * own option of the same name.
+ */
+export interface JpegCompressorVariant {
+  /** Artifact variant name, used to build `${stem}.${variant}.jpg`. */
+  variant: string;
+  /** JPEG quality 1–100. Defaults to the plugin's `quality`. */
+  quality?: number;
+  /** Longest-edge cap in px. Defaults to the plugin's `maxLongEdge` (`-1` = original). */
+  maxLongEdge?: number;
+  /** Soft size cap in MB. Defaults to the plugin's `maxSizeMB`. */
+  maxSizeMB?: number;
+}
+
 export interface JpegCompressorPluginOptions {
   variant?: string;
   quality: number;
   maxLongEdge?: number;
   maxSizeMB: number;
   debug?: boolean;
+  /**
+   * Emit several JPEG variants from **one** decode: the source is decoded once
+   * (EXIF orientation applied by that decode, so `exifOrientation` is not
+   * needed), then resized and encoded once per entry. This replaces registering
+   * several `.with({}, { instanceId })` clones, each of which would decode the
+   * source again.
+   *
+   * When set and non-empty, this mode takes precedence over the flat
+   * `variant` / `quality` / `maxLongEdge` / `maxSizeMB` options, which are only
+   * used as per-variant fallbacks.
+   *
+   * @example
+   * ```ts
+   * jpegCompressor.with({
+   *   variants: [
+   *     { variant: "outputFile", quality: 82, maxLongEdge: 2560, maxSizeMB: 1 },
+   *     { variant: "thumb", quality: 60, maxLongEdge: 400, maxSizeMB: 0.25 },
+   *   ],
+   * });
+   * ```
+   */
+  variants?: JpegCompressorVariant[];
   /**
    * URL of the `browser-image-compression` script the Web Worker loads via
    * `importScripts`. Defaults to the library's public CDN build. Supply a
@@ -58,6 +103,68 @@ export interface JpegCompressorPluginOptions {
 }
 
 /**
+ * Clamp a 1–100 quality option to a 0–1 JPEG quality fraction.
+ */
+function qualityFraction(quality: number): number {
+  return Math.min(100, Math.max(1, quality)) / 100;
+}
+
+/** `-1` means "keep the original size" — normalize it to an absent constraint. */
+function resolveMaxEdge(value: number | undefined): number | undefined {
+  return value === -1 ? undefined : value;
+}
+
+/**
+ * Encode every configured variant from a single decode, preferring the worker
+ * pool (one job per source file) and falling back to the main thread.
+ */
+async function encodeVariants(
+  sourceFile: File | Blob,
+  specs: JpegCompressorVariant[],
+  pluginOpts: JpegCompressorPluginOptions,
+  useWorker: boolean,
+  stemName: string,
+  ctx: PipelineContext,
+): Promise<EncodedJpegVariant[]> {
+  const jobs: JpegVariantJob[] = specs.map((spec) => {
+    const maxLongEdge = resolveMaxEdge(spec.maxLongEdge ?? pluginOpts.maxLongEdge);
+    const maxSizeMB = spec.maxSizeMB ?? pluginOpts.maxSizeMB;
+    return {
+      variant: spec.variant,
+      filename: `${stemName}.${spec.variant}.jpg`,
+      quality: qualityFraction(spec.quality ?? pluginOpts.quality),
+      ...(maxLongEdge !== undefined ? { maxLongEdge } : {}),
+      ...(maxSizeMB !== undefined ? { maxSizeMB } : {}),
+    };
+  });
+
+  if (useWorker && isOffscreenWorkerSupported()) {
+    try {
+      ctx.log(
+        "debug",
+        `Offloading ${jobs.length} JPEG variant(s) of "${stemName}" to the background worker pool`,
+      );
+      const results = await compressVariantsInWorker(sourceFile, jobs);
+      return results.map((result) => ({
+        variant: result.variant,
+        filename: result.filename,
+        file: new File([result.blob], result.filename, {
+          type: "image/jpeg",
+          lastModified: Date.now(),
+        }),
+      }));
+    } catch (err) {
+      ctx.log(
+        "warn",
+        `Worker variant compression failed for "${stemName}", falling back to the main thread: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  return encodeJpegVariants(sourceFile, jobs);
+}
+
+/**
  * JPEG/PNG/WebP compressor — base instance with defaults.
  * Create variants via `.with()`:
  *
@@ -65,6 +172,14 @@ export interface JpegCompressorPluginOptions {
  * ```ts
  * jpegCompressor.with({ variant: "optimized", quality: 80, maxSizeMB: 1 })
  * jpegCompressor.with({ variant: "thumbnail", quality: 78, maxLongEdge: 320, maxSizeMB: 0.25 })
+ *
+ * // Or emit several variants from one decode:
+ * jpegCompressor.with({
+ *   variants: [
+ *     { variant: "outputFile", quality: 82, maxLongEdge: 2560 },
+ *     { variant: "thumb", quality: 60, maxLongEdge: 400 },
+ *   ],
+ * })
  * ```
  */
 export const jpegCompressor: Plugin<JpegCompressorPluginOptions> =
@@ -73,11 +188,11 @@ export const jpegCompressor: Plugin<JpegCompressorPluginOptions> =
     name: "JPEG Compressor Plugin",
     options: { variant: "outputFile", quality: 1, maxLongEdge: -1, maxSizeMB: 1, debug: false },
     supports: (file) => isAnyImage(file),
-    run: async (input, pluginOpts, classif, ctx) => {
+    run: async (input, pluginOpts, classif, ctx): Promise<PipelineResult> => {
       const stemName = classif.stemName;
       const variantName = pluginOpts.variant ?? "outputFile";
-      const q = Math.min(100, Math.max(1, pluginOpts.quality)) / 100;
-      const maxWH = pluginOpts.maxLongEdge === -1 ? undefined : pluginOpts.maxLongEdge;
+      const q = qualityFraction(pluginOpts.quality);
+      const maxWH = resolveMaxEdge(pluginOpts.maxLongEdge);
 
       if (classif.isSvg) {
         return {
@@ -89,10 +204,51 @@ export const jpegCompressor: Plugin<JpegCompressorPluginOptions> =
 
       const sourceFile = (ctx.shared.get(PIPELINE_CURRENT_KEY) as File | undefined) ?? input.file;
 
+      const useWorker = ctx.shared.get("pipeline:useWorker") === true;
+
+      // Multi-variant mode: decode once, emit every configured variant.
+      const variantSpecs = pluginOpts.variants;
+      if (variantSpecs && variantSpecs.length > 0) {
+        try {
+          const encoded = await encodeVariants(
+            sourceFile,
+            variantSpecs,
+            pluginOpts,
+            useWorker,
+            stemName,
+            ctx,
+          );
+          return {
+            artifacts: encoded.map((variant) =>
+              artifact(
+                variant.variant,
+                variant.file,
+                variant.filename,
+                variant.file.type,
+                input.relativePath !== undefined ? { relativePath: input.relativePath } : {},
+              ),
+            ),
+            info: [],
+            removeFromQueue: false,
+          };
+        } catch (err) {
+          ctx.log(
+            "warn",
+            `Could not encode JPEG variants for "${input.name}": ${err instanceof Error ? err.message : String(err)}`,
+          );
+          return {
+            artifacts: [],
+            info: [
+              warning(`Could not produce JPEG variants for "${input.name}".`, "variant_failed"),
+            ],
+            removeFromQueue: false,
+          };
+        }
+      }
+
       // Try browser-image-compression first, fall back to Canvas API
       let compressed: Blob | File | null = null;
 
-      const useWorker = ctx.shared.get("pipeline:useWorker") === true;
       if (useWorker) {
         try {
           if (isOffscreenWorkerSupported()) {

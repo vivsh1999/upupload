@@ -114,7 +114,7 @@ Each plugin is a `Plugin` instance exported from its own entry point.
 ### `jpegCompressor` — JPEG/PNG/WebP compressor
 
 - **Import:** `@vivsh1999/upupload/plugins/jpeg-compressor` or `@vivsh1999/upupload/plugins`
-- **Options:** `{ variant?: string, quality: number (1-100), maxLongEdge?: number (pixels, -1 for no limit), maxSizeMB: number, debug?: boolean }`
+- **Options:** `{ variant?: string, quality: number (1-100), maxLongEdge?: number (pixels, -1 for no limit), maxSizeMB: number, debug?: boolean, variants?: Array<{ variant: string, quality?: number, maxLongEdge?: number, maxSizeMB?: number }> }`
 - **Default options:** `{ variant: "outputFile", quality: 1, maxLongEdge: -1, maxSizeMB: 1, debug: false }`
 - **Supports:** All raster image files (JPEG, PNG, WebP, BMP, TIFF, HEIC, HEIF, AVIF) plus RAW extensions
 - SVG files are skipped with a warning
@@ -131,6 +131,15 @@ const proof = jpegCompressor.with(
   { variant: "client-proof", quality: 85, maxLongEdge: 2560 },
   { instanceId: "proof" },
 );
+
+// Prefer `variants` for several sizes: ONE decode, one encode per size
+// (each instanceId clone above decodes the source again).
+const sizes = jpegCompressor.with({
+  variants: [
+    { variant: "client-proof", quality: 85, maxLongEdge: 2560 },
+    { variant: "thumb", quality: 78, maxLongEdge: 320, maxSizeMB: 0.25 },
+  ],
+});
 ```
 
 ### `rawToJpeg` — RAW/HEIC/TIFF decoder
@@ -251,14 +260,14 @@ interface UseFileUploadResult<TMeta = void> {
 useFileUpload({
   plugins: [
     rawToJpeg,
-    jpegCompressor.with(
-      { variant: "proof", quality: 85, maxLongEdge: 2560 },
-      { instanceId: "proof" },
-    ),
-    jpegCompressor.with(
-      { variant: "thumb", quality: 78, maxLongEdge: 320, maxSizeMB: 0.25 },
-      { instanceId: "thumb" },
-    ),
+    // ONE decode → every size. Prefer this over two instanceId clones,
+    // each of which would decode the source again.
+    jpegCompressor.with({
+      variants: [
+        { variant: "proof", quality: 85, maxLongEdge: 2560 },
+        { variant: "thumb", quality: 78, maxLongEdge: 320, maxSizeMB: 0.25 },
+      ],
+    }),
   ],
   onFileComplete: (item) => {
     for (const a of item.artifacts ?? []) {

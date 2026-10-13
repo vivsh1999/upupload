@@ -2,11 +2,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent, HTMLAttributes, ComponentProps } from "react";
 import type { BrowserPipelineOptions } from "../browser/pipeline";
-import { DEFAULT_BROWSER_PIPELINE_OPTIONS, runDefaultBrowserPipeline } from "../browser/pipeline";
+import { runDefaultBrowserPipeline } from "../browser/pipeline";
 import type { PipelineResult, PipelineSource } from "../core/types";
 import type { ProcessingPlugin } from "../plugin/types";
 import type { PipelineDef } from "../browser/pipeline";
 import { Semaphore } from "./utils";
+import { resolveInitialConfig } from "./_config";
 import { saveQueue, loadQueue, serializeForStorage, buildDbName } from "./persistence";
 
 export type { BrowserPipelineOptions, LogLevel, PipelineDef } from "../browser/pipeline";
@@ -382,10 +383,9 @@ export function useFileUpload<TMeta = void, TPreload = undefined>(
     pruneUploadedArtifacts,
   } = options ?? {};
 
-  const [config, setConfig] = useState<BrowserPipelineOptions>(() => {
-    const logLevel = pipelineConfig?.logLevel ?? DEFAULT_BROWSER_PIPELINE_OPTIONS.logLevel;
-    return logLevel !== undefined ? { logLevel } : {};
-  });
+  const [config, setConfig] = useState<BrowserPipelineOptions>(() =>
+    resolveInitialConfig(pipelineConfig),
+  );
 
   const [queue, setQueue] = useState<FileUploadQueueItem<TMeta>[]>([]);
   const queueRef = useRef(queue);

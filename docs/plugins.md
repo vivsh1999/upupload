@@ -35,6 +35,8 @@ const watermark = new Plugin<{ opacity: number }>({
 });
 ```
 
+An `after` / `before` entry that names a `.with({}, { instanceId })` clone's **base id** (e.g. `before: ["jpeg-compressor"]` when the pipeline contains `jpeg-compressor:web` and `jpeg-compressor:thumb`) constrains every matching instance. An entry that matches no plugin at all — not even by that prefix — is logged at `warn` level and otherwise ignored.
+
 When you need to embed multiple stages per plugin, use the `createStages` config (the `run` shorthand is an auto-wrap around `createStages` returning a single-element array):
 
 ```ts
@@ -94,7 +96,7 @@ return { action: "fallback", value: fallbackResult() };
 
 Handles standard raster images (JPEG, PNG, WebP, BMP, GIF, AVIF).
 
-- Each `.with()` instance produces **one output variant** (configured by `variant`). Add multiple instances for multiple sizes:
+- Each `.with()` instance produces **one output variant** by default (configured by `variant`). Add multiple instances for multiple sizes:
   ```ts
   jpegCompressor.with(
     { variant: "optimized", quality: 80, maxLongEdge: 2560, maxSizeMB: 1 },
@@ -105,9 +107,19 @@ Handles standard raster images (JPEG, PNG, WebP, BMP, GIF, AVIF).
     { instanceId: "thumb" },
   );
   ```
+- **Prefer `variants` to emit several sizes from one decode.** Passing `variants` makes a single instance decode the source once and encode each listed size; the multi-instance form above decodes the source once _per instance_.
+  ```ts
+  jpegCompressor.with({
+    variants: [
+      { variant: "optimized", quality: 80, maxLongEdge: 2560, maxSizeMB: 1 },
+      { variant: "thumbnail", quality: 78, maxLongEdge: 320, maxSizeMB: 0.25 },
+    ],
+  });
+  ```
+  Every per-variant field falls back to the plugin's own option of the same name. Because the shared decode also applies EXIF orientation, `exifOrientation` is unnecessary in this mode.
 - If a previous plugin placed a decoded file in shared context (`pipeline:current`), the compressor operates on that instead of the original.
 - `quality` and `maxSizeMB` are required; `variant` defaults to `"outputFile"`, `maxLongEdge` defaults to `-1` (original size).
-- Optional tuning: `useWebWorker` (default `true`), `maxIteration` (default `12`, caps the re-encode attempts spent trying to reach `maxSizeMB`), `libURL` (self-host the `browser-image-compression` script the worker loads via `importScripts` instead of the default public CDN), and `exifOrientation` (supplying it avoids `browser-image-compression` reading the entire source blob just to discover orientation).
+- Optional tuning: `variants` (emit N sizes from one decode, see above), `useWebWorker` (default `true`), `maxIteration` (default `12`, caps the re-encode attempts spent trying to reach `maxSizeMB`), `libURL` (self-host the `browser-image-compression` script the worker loads via `importScripts` instead of the default public CDN), and `exifOrientation` (supplying it avoids `browser-image-compression` reading the entire source blob just to discover orientation; not needed with `variants`).
 - Does NOT handle RAW/HEIC/TIFF — use `rawToJpeg` for those
 - **Dep:** `browser-image-compression` (install separately); **falls back** to Canvas API when unavailable, logging a `warn` naming the failure
 

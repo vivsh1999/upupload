@@ -45,6 +45,8 @@ function Uploader() {
 
 ### Options
 
+`pipelineConfig` seeds the hook's initial `BrowserPipelineOptions`. Every field is forwarded (with defaults applied), so e.g. `pipelineConfig: { useWorker: true }` really enables the background worker pool — not just `logLevel`. Change options after mount with `updateConfig(patch)`.
+
 ```ts
 interface UseFileUploadOptions<TMeta = void, TPreload = undefined> {
   plugins?: ProcessingPlugin<any>[];

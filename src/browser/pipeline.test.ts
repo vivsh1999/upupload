@@ -463,4 +463,119 @@ describe("plugin ordering", () => {
       /Cycle detected/,
     );
   });
+
+  it("treats a bare plugin id as an alias for every instanceId clone, without warning", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const stageIds: string[] = [];
+
+    const extractor = new Plugin({
+      id: "exif-extractor",
+      options: {},
+      supports: () => true,
+      // The defensive declaration documented for multi-instance setups: the bare
+      // base id alongside the two real instance ids.
+      before: ["jpeg-compressor", "jpeg-compressor:web", "jpeg-compressor:thumb"],
+      run: async () => emptyResult(),
+    });
+
+    const web = new Plugin({
+      id: "jpeg-compressor:web",
+      options: {},
+      supports: () => true,
+      run: async () => emptyResult(),
+    });
+
+    const thumb = new Plugin({
+      id: "jpeg-compressor:thumb",
+      options: {},
+      supports: () => true,
+      run: async () => emptyResult(),
+    });
+
+    await runDefaultBrowserPipeline(
+      source(),
+      { logLevel: "warn" },
+      {
+        plugins: [web, extractor, thumb],
+        onProgress: (event) => {
+          if (event.phase === "start") stageIds.push(event.stageId);
+        },
+      },
+    );
+
+    const relevant = stageIds.filter(
+      (id) =>
+        id === "exif-extractor" || id === "jpeg-compressor:web" || id === "jpeg-compressor:thumb",
+    );
+    expect(relevant.indexOf("exif-extractor")).toBeLessThan(
+      relevant.indexOf("jpeg-compressor:web"),
+    );
+    expect(relevant.indexOf("exif-extractor")).toBeLessThan(
+      relevant.indexOf("jpeg-compressor:thumb"),
+    );
+
+    // The bare base id is now satisfiable, so it no longer produces a warning.
+    const messages = warn.mock.calls.map((call) => call.join(" "));
+    expect(messages.some((message) => message.includes("jpeg-compressor"))).toBe(false);
+
+    warn.mockRestore();
+  });
+
+  it("orders a plugin after every instance when the edge names the base id", async () => {
+    const order: string[] = [];
+
+    const web = new Plugin({
+      id: "jpeg-compressor:web",
+      options: {},
+      supports: () => true,
+      run: async () => {
+        order.push("web");
+        return emptyResult();
+      },
+    });
+
+    const thumb = new Plugin({
+      id: "jpeg-compressor:thumb",
+      options: {},
+      supports: () => true,
+      run: async () => {
+        order.push("thumb");
+        return emptyResult();
+      },
+    });
+
+    const uploader = new Plugin({
+      id: "uploader",
+      options: {},
+      supports: () => true,
+      after: ["jpeg-compressor"],
+      run: async () => {
+        order.push("uploader");
+        return emptyResult();
+      },
+    });
+
+    await runDefaultBrowserPipeline(source(), {}, { plugins: [uploader, web, thumb] });
+
+    expect(order).toEqual(["web", "thumb", "uploader"]);
+  });
+
+  it("does not cycle when an instance declares `after` its own base id", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const web = new Plugin({
+      id: "jpeg-compressor:web",
+      options: {},
+      supports: () => true,
+      after: ["jpeg-compressor"],
+      run: async () => emptyResult(),
+    });
+
+    await expect(
+      runDefaultBrowserPipeline(source(), { logLevel: "warn" }, { plugins: [web] }),
+    ).resolves.toBeDefined();
+
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
 });

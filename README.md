@@ -2,7 +2,8 @@
 
 Client-first, multi-stage file uploader/processor with a **plugin architecture** for custom processing.
 
-- **Background Web Worker Threading** — Offload intensive image scaling/compression entirely to a Web Worker via `useWorker: true`
+- **Background Web Worker Threading** — Offload intensive image scaling/compression to a pool of Web Workers via `useWorker: true`
+- **One-Decode Multi-Variant JPEGs** — `jpegCompressor.with({ variants: [...] })` encodes every size from one decode
 - **Progressive Memory Garbage Collection** — Auto-purges file buffers and revokes object URLs on successful uploads to keep RAM clean
 - **Pre-built Upload Adapters** — Zero-dependency, tree-shakable standard HTTP & S3/R2 presigned URL upload adapters
 - Pipeline engine handles validation, original passthrough, video posters, and safe fallback
@@ -178,7 +179,7 @@ The hook accepts a `UseFileUploadOptions<TMeta, TPreload>` object. Key options:
 | ---------------------------------- | ------------------------------------------------------------------------- |
 | `plugins`                          | Processing plugins to apply                                               |
 | `pipeline`                         | `PipelineDef[]` for per-type routing                                      |
-| `pipelineConfig`                   | Pass `{ logLevel: "debug" }` for verbose console output                   |
+| `pipelineConfig`                   | Initial `BrowserPipelineOptions` — every field forwarded                  |
 | `uploadAdapter`                    | Function that receives each artifact and its helpers                      |
 | `tuning.maxConcurrency`            | Pipeline parallelism (default: CPU count, capped at 4)                    |
 | `tuning.maxUploadConcurrency`      | Upload adapter parallelism (defaults to `maxConcurrency`)                 |

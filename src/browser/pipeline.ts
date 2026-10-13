@@ -30,6 +30,25 @@ export {
 
 type MissingEdge = { pluginId: string; depId: string; relation: "after" | "before" };
 
+/**
+ * Resolve an ordering edge to the set of present plugin ids it names.
+ *
+ * An exact id match wins. Otherwise the edge is treated as an alias for every
+ * present instance of that plugin (`base:instanceId`), which is how
+ * `.with({}, { instanceId })` renames clones. A bare `after: ["jpeg-compressor"]`
+ * therefore constrains every `jpeg-compressor:*` instance instead of being
+ * reported as a dangling edge — the false positive this replaces.
+ */
+function resolveEdgeTargets(depId: string, presentIds: Iterable<string>): string[] {
+  const prefix = `${depId}:`;
+  const instances: string[] = [];
+  for (const id of presentIds) {
+    if (id === depId) return [depId];
+    if (id.startsWith(prefix)) instances.push(id);
+  }
+  return instances;
+}
+
 function topologicalSort(plugins: ProcessingPlugin<any>[]): {
   sorted: ProcessingPlugin<any>[];
   missingEdges: MissingEdge[];
@@ -48,25 +67,41 @@ function topologicalSort(plugins: ProcessingPlugin<any>[]): {
   for (const p of plugins) {
     if (p.after) {
       for (const depId of p.after) {
-        if (!byId.has(depId)) {
+        const targets = resolveEdgeTargets(depId, byId.keys());
+        if (targets.length === 0) {
           missingEdges.push({ pluginId: p.id, depId, relation: "after" });
           continue;
         }
-        adj.get(depId)!.push(p.id);
-        inDegree.set(p.id, (inDegree.get(p.id) ?? 0) + 1);
+        // A constraint against itself is a no-op (e.g. `jpeg-compressor:web`
+        // declaring `after: ["jpeg-compressor"]` when it is the only instance).
+        for (const target of targets) {
+          if (target !== p.id) adj.get(target)!.push(p.id);
+        }
       }
     }
 
     if (p.before) {
       for (const depId of p.before) {
-        if (!byId.has(depId)) {
+        const targets = resolveEdgeTargets(depId, byId.keys());
+        if (targets.length === 0) {
           missingEdges.push({ pluginId: p.id, depId, relation: "before" });
           continue;
         }
-        adj.get(p.id)!.push(depId);
-        inDegree.set(depId, (inDegree.get(depId) ?? 0) + 1);
+        for (const target of targets) {
+          if (target !== p.id) adj.get(p.id)!.push(target);
+        }
       }
     }
+  }
+
+  // Deduplicate the adjacency lists (several entries can resolve to the same
+  // instance) and derive in-degrees from the final graph.
+  for (const [from, list] of adj) {
+    adj.set(from, [...new Set(list)]);
+  }
+  for (const id of byId.keys()) inDegree.set(id, 0);
+  for (const list of adj.values()) {
+    for (const to of list) inDegree.set(to, (inDegree.get(to) ?? 0) + 1);
   }
 
   // Cycle detection via DFS

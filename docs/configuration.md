@@ -13,6 +13,12 @@ type BrowserPipelineOptions = {
 
 The pipeline-level options configure global logging (`logLevel`) and background thread offloading (`useWorker`). All processing tuning (quality, resolution, size) is configured per-plugin via each plugin's typed options.
 
+When `useWorker` is `true`, compression is dispatched one job per source file across a pool of up to `min(4, hardwareConcurrency)` background workers. With the React hook, pass it through `pipelineConfig` (every field is forwarded):
+
+```ts
+useFileUpload({ pipelineConfig: { useWorker: true, logLevel: "warn" } });
+```
+
 ## Plugin Options
 
 Plugins use the `Plugin` class with the `.with()` pattern:
@@ -27,6 +33,14 @@ rawToJpeg.with({ debug: true });
 // JPEG/PNG/WebP compressor — set base defaults:
 jpegCompressor.with({ quality: 80, maxLongEdge: 1920, maxSizeMB: 1 });
 // Defaults: `variant` → `"outputFile"`, `maxLongEdge` → `-1` (original size).
+
+// ...or emit several sizes from a single decode:
+jpegCompressor.with({
+  variants: [
+    { variant: "outputFile", quality: 80, maxLongEdge: 1920, maxSizeMB: 1 },
+    { variant: "thumb", quality: 60, maxLongEdge: 400, maxSizeMB: 0.25 },
+  ],
+});
 
 // Video poster frame:
 videoPoster.with({ variant: "poster", maxEdge: 640 });

@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.8.0] — 2026-10-13
+
+### Added
+
+#### One-decode multi-variant JPEGs
+
+- `jpegCompressor` accepts `variants` — an array of `{ variant, quality?, maxLongEdge?, maxSizeMB? }`. A single instance now decodes the source **once** and encodes one JPEG per entry, where the equivalent `.with({}, { instanceId })` clones decoded the source once _each_. Per-variant fields fall back to the plugin's own options.
+- The shared decode applies EXIF orientation (`imageOrientation: "from-image"`), so `exifOrientation` is unnecessary in this mode.
+- Backed by a new internal encoder (`src/plugin/_jpegVariants.ts`) on the main thread and a batch job on the worker path; both use the same variant contract.
+
+### Fixed
+
+#### `pipelineConfig` discarded every option except `logLevel`
+
+- `useFileUpload` forwards the whole `pipelineConfig` object into the pipeline options. `pipelineConfig: { useWorker: true }` previously reached nothing — the hook copied only `logLevel`, so the documented `useWorker` capability was unreachable from the React path. `updateConfig({ useWorker: true })` still works as before.
+
+#### `useWorker` serialised the whole batch onto a single worker
+
+- The `useWorker` path now dispatches to a pool of up to `min(4, hardwareConcurrency)` workers, **one job per source file**, instead of a single module-level worker that every variant of every in-flight photo queued behind. Concurrent files run in parallel; a file's variants stay on one thread and share a single decode.
+- Added `terminateWorkerPool()` to release the threads.
+
+#### Ordering edges to `instanceId` clones warned on every upload
+
+- An `after` / `before` entry naming a plugin's **base id** now resolves to every present `id:instanceId` instance. The defensive declaration `before: ["jpeg-compressor", "jpeg-compressor:web", "jpeg-compressor:thumb"]` no longer logs a dangling-edge warning for every photo, which is the false positive that trained readers to ignore the channel.
+- An entry that matches no plugin at all is still logged at `warn` level, and a constraint that resolves only to the declaring plugin itself is a no-op instead of a self-cycle.
+
+### Changed
+
+- Ordering edges are de-duplicated and in-degrees derived from the final graph, so declaring a base id alongside its instances cannot inflate a node's in-degree.
+
 ## [0.7.2] — 2026-09-12
 
 ### Fixed
